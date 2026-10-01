@@ -1,67 +1,56 @@
 # flutter-webui
 
-The Flutter embedder for KernelSU WebUI hosts, in Dart. A WebUI page runs in
-the manager's WebView, which is not a browser: `ksu.exec` blocks the page,
-missing files come back as empty 200s, back closes the activity unless
-intercepted, and clipboard, files, share, insets and colors exist only through
-the bridge. This repo makes stock Flutter APIs work there anyway.
+The Flutter embedder for KernelSU-style WebUI hosts, in Dart. A module's page
+runs inside the root manager's WebView (KernelSU, KernelSU Next, SukiSU, APatch,
+WebUI X / MMRL). This repo makes a stock Flutter web app behave there the way it
+does in a browser tab.
 
-WebUI is the standard (KernelSU, APatch, SukiSU, KSU Next). WebUI X (MMRL) is
-its child: it adds, changes and removes features. Both are modelled here; apps
-see the differences as capabilities, never as manager names.
+## Parity reference
+
+WebUI is a web page, so its peer is Flutter's own `web_ui`, not Android. Parity
+means a stock app (no WebUI-specific code) behaves as it does as a Flutter web
+app in a browser tab, and the staple plugins work (through `webui-packages`).
+
+- Going to the home screen is switching tabs: `AppLifecycleState` goes `hidden`
+  and back to `resumed`, as `web_ui` does on `visibilitychange`.
+- The manager recreating or killing its screen is a discarded tab: a fresh
+  start. No `flutter/restoration`, as in `web_ui`.
+- Back at the root route closes the tab (`ksu.exit` / `webui.exit`).
 
 ## How
 
-A `WidgetsFlutterBinding` subclass intercepts the standard channels
-(`flutter/platform`, `navigation`, `lifecycle`, `settings`, `textinput`) and
-answers them from the bridge instead of the browser, and feeds bridge insets
-into window metrics. Plain Dart then works: `Clipboard`, `SystemNavigator.pop`,
-`PopScope`, `WidgetsBindingObserver`, `MediaQuery`.
-
-This sits above the stock `web_ui`. If a host limitation turns out to be below
-the binding (renderer, pointer or IME behaviour of the WebView), a forked
-`web_ui` lands in this same repo and the CLI switches to `--local-web-sdk`.
+- **Patched `web_ui`** (pinned Flutter release, patch series): handlers sit
+  where `web_ui` has them, so `main()` is stock.
+- **Host detection** probes optional bridge methods; a manager's name or
+  version never selects behaviour. WebUI X is a child of WebUI: its deltas are a
+  table.
+- **Bootstrap** (`index.html`, loader) for the manager's fixed origin, plus
+  Web-API shims backed by the root side where a WebView lacks an API.
+- **Root channel**: a small Dart executable started once through the bridge.
+  It serves one WebSocket on 127.0.0.1 (port and token in
+  `webroot/.run/session.json`), replacing the bridge's blocking `exec`, flaky
+  `spawn`, quoting limits and polling. It offers a stable channel and process
+  launch, nothing else; plugins and apps build on it.
 
 ## Scope
 
-In: the binding, the `webui` host and its `webuix` child, host detection, the
-channel handlers, the ops transport over `ksu.exec`, the bootstrap page, fake
-hosts for CI, module zip layout.
+In: the patched `web_ui` and its handlers, host detection, the bootstrap and
+shims, the root channel, host fakes for tests, per-host notes.
 
-Out: the ops protocol and `Handler` (`surfaces`), app code.
+Out: plugins (`webui-packages`), the build/packaging tool (`flutterp0g_tool`,
+which also adds the `webui/` platform folder to an app), app code, work that
+must outlive the page (the app's own root process).
 
-## Proposed nest
+## Nest (proposed)
 
 ```
-spec/
-  host.md             the bridge as observed per manager; the webui -> webuix delta as a table
-packages/flutter_webui/lib/
-  binding.dart        WebUiBinding: channel interception, window metrics
-  host/detect.dart    probe optional methods; never manager names
-  host/webui.dart     base: ksu.exec, $module, /internal/*.css, back interception
-  host/webuix.dart    child: webui.* API, WX_* events, config.json; adds, changes, removes
-  handlers/           platform, navigation, lifecycle, settings, text_input
-  ops_transport.dart  OpsTransport over ksu.spawn (async, streaming); exec+poll fallback; detached jobs, attach, cancel
-bootstrap/            index.html, ES5 gate, flutter_bootstrap.js, fallback.html
-tools/
-  fake_host/          profiles webui-min, webui, webuix, browser; reproduces the blocking exec
-  module/             module.prop, customize.sh, config.json templates
+packages/flutter_webui/      host detection, channel handlers, root-channel client, tests vs fakes
+packages/flutter_webui_root/ the root channel executable (dart compile exe)
+web_ui/                      VERSION (Flutter pin) + patches/
+bootstrap/                   index.html, loader, shims/
+fakes/                       fake host objects + devicelab recordings they replay
+docs/hosts.md                host behaviour per manager, written once
 ```
-
-## Rules
-
-- The JS main thread is Flutter's UI thread. No handler may block it for
-  longer than the bridge call it wraps; long work goes through `surfaces`
-  jobs, never inline.
-- `ksu.spawn` is the ops transport; `ksu.exec` with a callback is still
-  synchronous on base KernelSU (the shell runs inside the bridge method) and
-  only async on WebUI X. `Cap.opsAsync` derives from `spawn`'s presence.
-- `spawn` joins args unquoted and posts every output line to the UI thread
-  with the reader blocked until it runs: quote every arg here, throttle status
-  lines in the worker, never stream raw command output through it.
-- Anything the host cannot do is a `Cap` with a fallback, not an exception.
-- `webuix` declares every delta from `webui` in `spec/host.md`; the code reads
-  that table.
 
 ## License
 
