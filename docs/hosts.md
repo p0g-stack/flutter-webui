@@ -4,7 +4,7 @@ How each manager behaves for a Flutter web page, and what flutter-webui does
 about it. Detection probes methods (`WebUiHost.detect`); the manager columns
 are only for reading. Sources: manager source reads (KernelSU 08a3b08,
 KernelSU-Next, WebUI-X-Portable ed569e19, APatch, KsuWebUIStandalone; see the
-project research notes). **Nothing here is device-verified yet**; numbers and
+project research notes). Only the "Verified" section below is device-verified; numbers and
 "works" claims come from devicelab runs, named by device and manager, when
 they exist.
 
@@ -74,11 +74,27 @@ WebUI X `webroot/config.json`:
   in `script-src` and `style-src` (or `default-src`), and `'unsafe-inline'`
   for its inline scripts (docs/dev.md).
 
+## Verified (devicelab)
+
+KernelSU 3.3.0, Android 15 x86_64 emulator, WebView 124.0.6367.219
+(devicelab managers, Actions run 36831416564, counter module 0.1.2):
+
+- The page loads at `https://mui.kernelsu.org/index.html` and draws edge to
+  edge; `--safe-area-inset-top` is 24px.
+- Home: `visibilitychange` to hidden, return: visible; no `focus`/`blur`.
+  Timers stop while hidden. Back at the root route closes the WebUI.
+- Root channel: `ksu.exec` of `root start` returns in 206 ms, `session.json`
+  is served 62 ms later, the WebSocket hello reports uid 0. The channel runs
+  as `u:r:ksu:s0` through the glibc loader. Page `fetch` and WebSocket to
+  127.0.0.1 work on this WebView (older than Local Network Access).
+- First frame (software GL, relative only): warm 1309 ms (2357 ms with 0.1.0,
+  which called `ksu.moduleInfo()` at start).
+
 ## Open (devicelab)
 
-- `visibilityState`, `focus`, `blur` per host for Home, recents, screen off,
-  the file chooser (KernelSU and WebUI X should go hidden by source; Next by
-  window visibility, inferred).
+
+- `visibilityState`, `focus`, `blur` on Next and WebUI X, and on KernelSU for
+  recents, screen off and the file chooser.
 - The keyboard on KernelSU-Next: does `viewInsets.bottom` change when a field
   near the bottom is focused?
 - Loopback from the page: no mixed-content block for `http://127.0.0.1` (seen
@@ -94,6 +110,6 @@ WebUI X `webroot/config.json`:
   host reads as root, `webroot/.run/session.json` can go from 0644 to 0600
   and `.run/` from 0711 to 0700 (`RunModes` in `flutter_webui_root`); check a
   page still finds the channel on each host after the change.
-- The Dart runtime on Android (Android-built `dartaotruntime`, or the linux one
-  through its bundled loader).
+- An Android-built `dartaotruntime` (the linux one through its bundled loader
+  works, above).
 - Full per-topic checks: `docs/parity.md`.
