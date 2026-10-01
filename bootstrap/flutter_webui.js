@@ -30,5 +30,14 @@
     return;
   }
 
+  // Edge-to-edge before the engine starts: turning it on later (from the
+  // flutter_webui plugin) resizes the WebView mid-start, which recreates the
+  // canvas. KernelSU names it enableEdgeToEdge, Next and APatch enableInsets.
+  var ksu = window.ksu;
+  try {
+    if (ksu && typeof ksu.enableEdgeToEdge === 'function') ksu.enableEdgeToEdge(true);
+    else if (ksu && typeof ksu.enableInsets === 'function') ksu.enableInsets(true);
+  } catch (e) { /* the plugin tries again */ }
+
   window.addEventListener('flutter-first-frame', removeSplash);
 })();
