@@ -99,13 +99,14 @@ WebUI X Portable with root, same emulator (runs 36833152967, 36833446476):
   and gets the hello with uid 0.
 - While paused (`pauseTimers()`), `setInterval` stops completely but fetch
   callbacks still run. Sockets belong to its uid (10210).
-- Back at the root route leaves the activity open (an exit-confirm dialog is
-  suspected; open below).
+- `ksu` and `webui` are defined after document start. At the root route the
+  page has one history entry, so Back reaches `webui.exit()` through a direct
+  `popRoute` (020ab92); verified with counter 0.1.5: WebUIActivity closes.
+- `ksu.moduleInfo()` can throw a Java exception (a null module entry); the
+  id then comes from the build's `<meta>`.
 
 ## Open (devicelab)
 
-- WebUI X: why Back at the root route leaves the activity open with
-  `exitConfirm: false` and `webui.exit()` called.
 
 
 - `visibilityState`, `focus`, `blur` on Next and WebUI X, and on KernelSU for
