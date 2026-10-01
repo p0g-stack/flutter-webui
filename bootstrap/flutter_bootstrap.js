@@ -10,15 +10,16 @@ if (!window.flutterWebUiNoFlutter) {
   var flutterWebUiConfig = {
     // No COOP/COEP on any manager: Skwasm can only run single-threaded.
     forceSingleThreadedSkwasm: true,
-    // Never reach for gstatic (WebUI X's CSP blocks it; pages may be offline).
-    // The module's fonts/; under dev.html too, which has no <base>, so this
-    // stays on the manager's origin where the installed module has them.
+    // Never reach for gstatic (WebUI X's CSP blocks it; pages may be offline):
+    // the module's fonts/ (web_ui/tool/fallback_fonts.dart).
     fontFallbackBaseUrl: 'fonts/',
   };
   if (flutterWebUiBase) {
     flutterWebUiConfig.entrypointBaseUrl = flutterWebUiBase;
     flutterWebUiConfig.assetBase = flutterWebUiBase;
     flutterWebUiConfig.canvasKitBaseUrl = flutterWebUiBase + 'canvaskit/';
+    // A dev module is only dev.html, so the dev server serves fonts/ too.
+    flutterWebUiConfig.fontFallbackBaseUrl = flutterWebUiBase + 'fonts/';
   }
   _flutter.loader.load({
     config: flutterWebUiConfig,

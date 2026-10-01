@@ -63,7 +63,7 @@ host; the failing case is quoted where there is one.
 | `Cache-Control: no-store` | A restarted app must not get a cached module | by design |
 | Pass the `Host` header to `flutter run` unchanged, and forward WebSocket upgrades | The DDC debug client opens `ws://<Host>/$dwdsSseHandler`; with the upstream's host it bypasses the dev server and needs a second forwarded port | yes: with `Host: 127.0.0.1:U` the page dialled `ws://127.0.0.1:U/...` |
 | Rewrite `reloaded_sources.json`: make each root-relative `src` absolute (`http://<Host>/packages/...`) | On hot restart the DDC loader loads the changed modules from these paths; relative, they resolve against the manager origin (where KernelSU answers an empty 200) | yes: before, `/packages/counter/main.dart.lib.js` hit the manager; after, hot restart and hot reload apply |
-| Add Roboto to `assets/FontManifest.json` and serve `assets/fonts/fallback/Roboto-Regular.ttf` from `<flutter>/engine/src/flutter/txt/third_party/fonts/` | `flutter build web --no-web-resources-cdn` bundles it, `flutter run` does not, and the bootstrap keeps the engine off gstatic (fallbacks come from the module's `fonts/`): without it no text renders | yes (blank text before, text after) |
+| Add Roboto to `assets/FontManifest.json` and serve `assets/fonts/fallback/Roboto-Regular.ttf` from `<flutter>/engine/src/flutter/txt/third_party/fonts/` | `flutter build web --no-web-resources-cdn` bundles it, `flutter run` does not, and the bootstrap keeps the engine off gstatic (fallbacks come from `fonts/` on the dev server, `--fonts`): without it no text renders | yes (blank text before, text after) |
 
 `bootstrap/dev.html` itself:
 
@@ -73,8 +73,10 @@ host; the failing case is quoted where there is one.
   origin 'https://mui.kernelsu.org'`). Instead it sets
   `window.flutterWebUiDevServer`, and `bootstrap/flutter_bootstrap.js` passes
   `entrypointBaseUrl`, `assetBase` and `canvasKitBaseUrl` under it to the
-  loader. `fontFallbackBaseUrl` stays `fonts/` on the manager's origin: the
-  installed module's offline fallback fonts (docs/hosts.md).
+  loader, and `fontFallbackBaseUrl` as `<dev server>/fonts/`: a dev module is
+  only `dev.html`, so the dev server serves the fallback fonts too
+  (`web_ui/tool/fallback_fonts.dart --out <dir>`, `dev_server.mjs --fonts
+  <dir>`). Tools add no loader shim of their own.
 - Loads `/internal/insets.css` from the manager and `flutter_webui.css` / `.js`
   and `flutter_bootstrap.js` from the dev server, and shows an error with the
   `adb reverse` hint when the dev server cannot be reached.

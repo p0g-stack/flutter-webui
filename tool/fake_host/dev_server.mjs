@@ -21,6 +21,7 @@ const USAGE = `usage: node tool/fake_host/dev_server.mjs (--dir <dir> | --proxy 
   --proxy <url>      forward to this server (flutter run -d web-server), adding the headers
   --port <n>         listen on 127.0.0.1:<n> (default 8080)
   --origin <origin>  allowed page origin (default https://mui.kernelsu.org)
+  --fonts <dir>      serve /fonts/ from this directory (web_ui/tool/fallback_fonts.dart --out)
   --flutter <root>   Flutter SDK root, for the Roboto fallback in --proxy mode
                      (default: $FLUTTER_ROOT, else the flutter on PATH)
   --no-cors          send no CORS headers (to see what breaks)
@@ -39,6 +40,7 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === '--proxy') opts.proxy = new URL(next());
   else if (a === '--port') opts.port = Number(next());
   else if (a === '--origin') opts.origin = next();
+  else if (a === '--fonts') opts.fonts = path.resolve(next());
   else if (a === '--flutter') opts.flutter = path.resolve(next());
   else if (a === '--no-cors') opts.cors = false;
   else if (a === '--no-pna') opts.pna = false;
@@ -107,12 +109,12 @@ function log(req, status) {
   console.log(`${status} ${req.method} ${req.url} origin=${req.headers.origin ?? '-'}${pna}`);
 }
 
-function serveFile(req, res) {
+function serveFile(req, res, dir = opts.dir, prefix = '') {
   const url = new URL(req.url, 'http://x');
-  let rel = decodeURIComponent(url.pathname);
+  let rel = decodeURIComponent(url.pathname).slice(prefix.length);
   if (rel.endsWith('/')) rel += 'index.html';
-  const file = path.join(opts.dir, path.normalize(rel));
-  if (!file.startsWith(opts.dir)) return send(req, res, 403, 'forbidden');
+  const file = path.join(dir, path.normalize('/' + rel));
+  if (!file.startsWith(dir + path.sep)) return send(req, res, 403, 'forbidden');
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) return send(req, res, 404, 'not found');
     res.writeHead(200, {
@@ -200,6 +202,9 @@ const server = http.createServer((req, res) => {
     res.writeHead(opts.cors ? 204 : 405, corsHeaders(req));
     log(req, opts.cors ? 204 : 405);
     return res.end();
+  }
+  if (opts.fonts && new URL(req.url, 'http://x').pathname.startsWith('/fonts/')) {
+    return serveFile(req, res, opts.fonts, '/fonts');
   }
   if (opts.proxy) return proxy(req, res);
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(req, res, 405, 'method');
