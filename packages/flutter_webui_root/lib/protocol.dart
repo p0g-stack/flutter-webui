@@ -27,6 +27,29 @@ const String sessionFilePath = '.run/session.json';
 /// Largest file the `read` op returns.
 const int maxReadBytes = 64 * 1024;
 
+/// Largest text frame (a JSON request), in UTF-8 bytes. Larger ones are
+/// answered with [ErrorCode.requestTooLarge] and otherwise ignored.
+const int maxRequestBytes = 512 * 1024;
+
+/// Largest `argv` plus `env` of one `start`, counted as UTF-8 bytes of every
+/// argument and every `KEY=value` (below the kernel's `ARG_MAX`).
+const int maxArgvEnvBytes = 128 * 1024;
+
+/// Most processes one connection may have running (attached and detached).
+const int maxProcessesPerConnection = 64;
+
+/// Most processes the channel tracks over all connections.
+const int maxProcesses = 256;
+
+/// Most open connections; a further upgrade is answered with HTTP 503.
+const int maxConnections = 16;
+
+/// Most stdin bytes the channel holds for one attached process that does not
+/// read them (a frame that arrives while none are held is taken whole). Past
+/// it the channel answers [ErrorCode.stdinOverflow], drops the frame and
+/// closes that process's stdin once the held bytes are written.
+const int maxStdinBufferBytes = 1024 * 1024;
+
 /// Stream tags in binary frames.
 abstract final class StreamTag {
   static const int stdin = 0;
@@ -152,4 +175,15 @@ abstract final class ErrorCode {
   static const String notFound = 'not-found';
   static const String startFailed = 'start-failed';
   static const String tooLarge = 'too-large';
+
+  /// A text frame over [maxRequestBytes], or a `start` whose `argv` and `env`
+  /// are over [maxArgvEnvBytes].
+  static const String requestTooLarge = 'request-too-large';
+
+  /// A `start` past [maxProcessesPerConnection] or [maxProcesses].
+  static const String tooManyProcesses = 'too-many-processes';
+
+  /// Stdin for a process that is not reading it went past
+  /// [maxStdinBufferBytes]; its stdin is closed.
+  static const String stdinOverflow = 'stdin-overflow';
 }

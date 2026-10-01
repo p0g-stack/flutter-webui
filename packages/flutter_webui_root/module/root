@@ -18,6 +18,11 @@ esac
 case "$1" in
   start)
     mkdir -p "$run"
+    # Not listable; root.log is root-only (the channel sets the rest). The
+    # umask applies to this subshell only, never to the channel's children.
+    chmod 711 "$run"
+    (umask 077 && : >>"$run/root.log")
+    chmod 600 "$run/root.log"
     if command -v setsid >/dev/null 2>&1; then
       setsid sh "$dir/root" serve </dev/null >>"$run/root.log" 2>&1 &
     else

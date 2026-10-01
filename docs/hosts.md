@@ -87,6 +87,11 @@ WebUI X `webroot/config.json`:
   `/.<modId>/` to the module directory; a module id `run` would collide).
 - `WX_ON_INSETS` units; `textZoom` effect; clipboard `writeText` and long-press
   paste per host; offline emoji with the bundled fonts.
-- Full per-topic checks: `docs/parity.md`.
+- Who reads `webroot/` when the manager serves it: root (a root shell or
+  libsu `SuFile`, as the source reads say) or the manager's own uid. If every
+  host reads as root, `webroot/.run/session.json` can go from 0644 to 0600
+  and `.run/` from 0711 to 0700 (`RunModes` in `flutter_webui_root`); check a
+  page still finds the channel on each host after the change.
 - The Dart runtime on Android (Android-built `dartaotruntime`, or the linux one
   through its bundled loader).
+- Full per-topic checks: `docs/parity.md`.

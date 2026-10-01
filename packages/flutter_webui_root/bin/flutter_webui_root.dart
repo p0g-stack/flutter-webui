@@ -56,8 +56,12 @@ Future<void> main(List<String> arguments) async {
     return;
   }
   // The launcher appends; the log holds only the running channel's output.
+  final rootLog = File('${webroot.path}/.run/root.log');
   try {
-    File('${webroot.path}/.run/root.log').writeAsStringSync('');
+    if (rootLog.existsSync()) {
+      rootLog.writeAsStringSync('');
+      await setMode(rootLog.path, RunModes.private);
+    }
   } on FileSystemException {
     // Started by hand, not through the launcher.
   }

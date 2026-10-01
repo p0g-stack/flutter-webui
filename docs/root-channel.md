@@ -20,12 +20,36 @@ else bumps `protocol`.
   <abi>/flutter_webui_root.aot   AOT snapshot of bin/flutter_webui_root.dart
   <abi>/dartaotruntime       Dart AOT runtime that runs on Android
   <abi>/ld-linux-*.so.*, lib*.so.*   only for a linux (glibc) runtime: its loader and libc
-<moddir>/webroot/.run/
-  session.json               written by the channel (below)
-  root.log                   channel stderr, truncated on each start
-  lock                       held while a channel runs
-  proc/<stamp>.log, .exit    output and exit code of detached processes (16 newest kept)
+<moddir>/webroot/.run/         0711: traversable, not listable
+  session.json               0644, written by the channel (below)
+  root.log                   0600, channel stderr, truncated on each start
+  lock                       0600, held while a channel runs
+  proc/                      0700
+  proc/<stamp>.log, .exit    0600, output and exit code of detached processes (16 newest kept)
+  proc/.boot                 boot id the files in proc/ are from
 ```
+
+Modes are set explicitly (`chmod`), not left to the umask of whatever shell
+started the channel; the channel never changes its own umask, so processes it
+starts keep the one they inherit. `session.json` carries the token, so it is
+written to a temporary file whose mode is set before the token is written,
+then renamed into place.
+
+Why `session.json` is 0644 and `.run/` 0711 rather than root-only: the page
+reads `session.json` through the manager's file server, not through root. The
+manager source reads (`docs/hosts.md`) say every host serves `webroot/` with
+root reads, and `/data/adb` is root-only, which would allow 0600 and 0700. That
+is not device-verified yet, so the file stays readable by the uid that serves
+it (an open devicelab item in `docs/hosts.md`); once verified, both tighten
+without a protocol change. Nothing else in `.run/` is meant for the manager.
+
+On start (after taking `lock`) the channel replaces whatever `session.json`
+holds: a file naming a dead pid, another boot (`/proc/sys/kernel/random/boot_id`)
+or another version is stale, and with the lock held no other channel of this
+module is running. It removes `session.json.*.tmp` left by a killed channel,
+and if `proc/.boot` names another boot, every log and exit file in `proc/`
+(their processes cannot be running). On exit it removes `session.json` only if
+the file still names its own pid.
 
 `<abi>` is `arm64-v8a` or `x86_64`. `flutter_p0g` compiles the snapshot and
 ships the runtime: stock `dart compile exe` has no Android target. Either an
@@ -70,8 +94,12 @@ Page start (`RootChannel.connect()` in `flutter_webui_client` does this):
 
 `ws://127.0.0.1:<port>/v1?token=<token>`
 
-- Wrong token: HTTP 401. `Origin` other than `https://mui.kernelsu.org`: 403.
-  No `Origin` (a non-browser client) is accepted with the token.
+- Wrong token: HTTP 401 (compared in constant time). `Origin` other than
+  `https://mui.kernelsu.org`, or more than one `Origin`: 403. No `Origin` (a
+  non-browser client) is accepted with the token.
+- At most 16 open connections (`maxConnections`); past it, and while the
+  channel shuts down, an upgrade gets HTTP 503.
+- No WebSocket extensions: `permessage-deflate` is not negotiated.
 - The server pings every 15 s. The WebView's network stack answers pings
   while page timers are paused, so a hidden page stays connected.
 - Several connections may be open; each owns the processes it starts.
@@ -97,17 +125,31 @@ On connect the server sends:
 ### Requests (page -> server)
 
 Every request carries an `id` (1 to 2^32-1) chosen by the page; `start` uses it
-as the process id on this connection. Failures answer
-`{"op":"error","id":n,"code":c,"message":"..."}` with `c` one of
-`bad-request`, `duplicate-id`, `no-such-process`, `not-found`, `start-failed`,
-`too-large`.
+as the process id on this connection (an id is in use from the `start` until
+its `exit`). Failures answer
+`{"op":"error","id":n,"code":c,"message":"..."}` with `c` one of:
+
+| Code | Meaning |
+|---|---|
+| `bad-request` | malformed request or frame |
+| `duplicate-id` | `start` with an id in use on this connection |
+| `no-such-process` | no running process with that id on this connection |
+| `not-found` | `read`: no such regular file inside the module |
+| `start-failed` | the process could not be started (or the channel is shutting down) |
+| `too-large` | `read`: the file is over 64 KiB |
+| `request-too-large` | a text frame over 512 KiB (`maxRequestBytes`; `id` is null), or a `start` whose `argv` and `env` are over 128 KiB (`maxArgvEnvBytes`, every argument and every `KEY=value` as UTF-8 plus a terminator) |
+| `too-many-processes` | `start` past 64 running processes on this connection (`maxProcessesPerConnection`) or 256 in the channel (`maxProcesses`); a detached process counts until its `exit` or its owner's disconnect |
+| `stdin-overflow` | over 1 MiB (`maxStdinBufferBytes`) of stdin waits for an attached process that does not read it; that frame is dropped and the process's stdin is closed after the bytes already held. A frame that arrives while nothing waits is taken whole. |
+
+The limits are constants in `lib/protocol.dart`. A request answered with an
+error has no other effect, and the connection stays open.
 
 | Request | Fields | Answer |
 |---|---|---|
-| `start` | `argv` (non-empty list of strings; `argv[0]` an absolute path or a name on `PATH`); optional `cwd`, `env` (string map merged over the channel's root environment), `detached` (bool, default false) | `{"op":"started","id":n,"pid":p}`, later `{"op":"exit","id":n,"code":c}` |
+| `start` | `argv` (non-empty list of strings without NUL; `argv[0]` a non-empty absolute path or a name on `PATH`); optional `cwd` (absolute path), `env` (string map merged over the channel's root environment; names non-empty without `=` or NUL, values without NUL), `detached` (bool, default false) | `{"op":"started","id":n,"pid":p}`, later `{"op":"exit","id":n,"code":c}` |
 | `close-stdin` | `id` | none |
 | `signal` | `id`, `signal`: `TERM` `KILL` `INT` `HUP` `USR1` `USR2` `STOP` `CONT` | none |
-| `read` | `path`: absolute; must resolve (symlinks too) inside the module directory; at most 64 KiB of UTF-8 | `{"op":"read","id":n,"data":"..."}` |
+| `read` | `path`: absolute; must resolve (symlinks too) to a regular file inside the module directory; at most 64 KiB of UTF-8 | `{"op":"read","id":n,"data":"..."}` |
 | `shutdown` | | ends attached processes, removes `session.json`, exits |
 
 Stdin bytes go as binary frames with stream 0 and the process id.

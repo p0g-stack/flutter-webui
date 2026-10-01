@@ -25,6 +25,26 @@ final class ChannelTimings {
   final Duration tailPoll;
 }
 
+/// Caps on what connections may ask for, overridable for tests. The defaults
+/// are the constants in `protocol.dart`.
+final class ChannelLimits {
+  const ChannelLimits({
+    this.connections = maxConnections,
+    this.processes = maxProcesses,
+    this.processesPerConnection = maxProcessesPerConnection,
+    this.requestBytes = maxRequestBytes,
+    this.argvEnvBytes = maxArgvEnvBytes,
+    this.stdinBufferBytes = maxStdinBufferBytes,
+  });
+
+  final int connections;
+  final int processes;
+  final int processesPerConnection;
+  final int requestBytes;
+  final int argvEnvBytes;
+  final int stdinBufferBytes;
+}
+
 /// The root channel: one WebSocket server on 127.0.0.1 and the processes its
 /// connections started. See `docs/root-channel.md`.
 final class RootChannelServer {
@@ -35,6 +55,7 @@ final class RootChannelServer {
     this.moduleDir,
     this.runDir,
     this.timings,
+    this.limits,
     this.log,
   );
 
@@ -43,22 +64,35 @@ final class RootChannelServer {
   static Future<RootChannelServer> start({
     required Directory moduleDir,
     ChannelTimings timings = const ChannelTimings(),
+    ChannelLimits limits = const ChannelLimits(),
     void Function(String) log = _noLog,
   }) async {
     final webroot = Directory('${moduleDir.path}/webroot');
     final runDir = Directory('${webroot.path}/.run');
-    await Directory('${runDir.path}/proc').create(recursive: true);
-    _pruneLogs(Directory('${runDir.path}/proc'));
+    final procDir = Directory('${runDir.path}/proc');
+    await prepareRunDir(webroot);
+    final boot = readBootId();
+    _clearOtherBoots(procDir, boot, log);
+    _pruneLogs(procDir);
+    // Whatever session.json says now is not this channel: drop it before
+    // binding, so a failed start leaves none behind.
+    final session = SessionFile(webroot);
+    final previous = session.read();
+    if (previous != null) {
+      final why =
+          staleReason(previous, boot: boot) ?? 'its channel holds no lock';
+      log('replacing session.json of pid ${previous.pid}: $why');
+    }
+    await session.clear();
     final token = _newToken();
     final http = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final session = SessionFile(webroot);
     final info = SessionInfo(
       protocol: protocolVersion,
       version: channelVersion,
       port: http.port,
       token: token,
       pid: pid,
-      boot: readBootId(),
+      boot: boot,
       started: DateTime.now(),
     );
     final server = RootChannelServer._(
@@ -68,9 +102,10 @@ final class RootChannelServer {
       moduleDir.absolute,
       runDir,
       timings,
+      limits,
       log,
     );
-    http.listen(server._handleRequest);
+    http.listen(server._handleRequest, onError: (Object e) => log('http: $e'));
     await session.write(info);
     server.info = info;
     server._checkIdle();
@@ -84,6 +119,7 @@ final class RootChannelServer {
   final Directory moduleDir;
   final Directory runDir;
   final ChannelTimings timings;
+  final ChannelLimits limits;
   final void Function(String) log;
 
   late final SessionInfo info;
@@ -94,6 +130,8 @@ final class RootChannelServer {
   Timer? _idleTimer;
   bool _closing = false;
   int _detachedCount = 0;
+  int _upgrading = 0;
+  int _starting = 0;
 
   /// Completes when the channel has shut down.
   Future<void> get done => _done.future;
@@ -116,21 +154,62 @@ final class RootChannelServer {
     if (!_done.isCompleted) _done.complete();
   }
 
+  /// Never throws: an error here would end the channel, and any local app
+  /// can send a request.
   Future<void> _handleRequest(HttpRequest request) async {
-    final origin = request.headers.value('origin');
+    try {
+      await _accept(request);
+    } on Object catch (e) {
+      log('request: $e');
+      try {
+        await request.response.close();
+      } on Object {
+        // The peer is gone.
+      }
+    }
+  }
+
+  Future<void> _accept(HttpRequest request) async {
+    final List<String> origins;
+    final String? token;
+    try {
+      origins = request.headers['origin'] ?? const [];
+      token = request.uri.queryParameters['token'];
+    } on FormatException {
+      return _reject(request, HttpStatus.badRequest);
+    }
     if (request.uri.path != channelPath) {
       return _reject(request, HttpStatus.notFound);
     }
-    if (request.uri.queryParameters['token'] != _token) {
+    if (token == null || !_sameToken(token, _token)) {
       return _reject(request, HttpStatus.unauthorized);
     }
-    if (origin != null && origin != managerOrigin) {
+    if (origins.length > 1 ||
+        (origins.isNotEmpty && origins.single != managerOrigin)) {
       return _reject(request, HttpStatus.forbidden);
     }
     if (!WebSocketTransformer.isUpgradeRequest(request)) {
       return _reject(request, HttpStatus.upgradeRequired);
     }
-    final socket = await WebSocketTransformer.upgrade(request);
+    if (_closing || _connections.length + _upgrading >= limits.connections) {
+      return _reject(request, HttpStatus.serviceUnavailable);
+    }
+    final WebSocket socket;
+    _upgrading++;
+    try {
+      // No permessage-deflate: nothing to gain on loopback, and an inflated
+      // frame could be far larger than what was sent.
+      socket = await WebSocketTransformer.upgrade(
+        request,
+        compression: CompressionOptions.compressionOff,
+      );
+    } finally {
+      _upgrading--;
+    }
+    if (_closing) {
+      await socket.close(WebSocketStatus.goingAway);
+      return;
+    }
     socket.pingInterval = timings.ping;
     final connection = _Connection(this, socket);
     _connections.add(connection);
@@ -171,6 +250,9 @@ final class RootChannelServer {
     _idleTimer = Timer(timings.idleExit, shutdown);
   }
 
+  bool _isOpen(_Connection connection) =>
+      !_closing && _connections.contains(connection);
+
   void _removeChild(_Child child) {
     _children.remove(child);
     _checkIdle();
@@ -198,6 +280,9 @@ final class _Connection {
   final WebSocket socket;
   final Map<int, _Child> byId = {};
 
+  /// Ids of `start` requests still launching.
+  final Set<int> _starting = {};
+
   void send(Map<String, Object?> message) {
     if (socket.readyState == WebSocket.open) socket.add(jsonEncode(message));
   }
@@ -211,11 +296,31 @@ final class _Connection {
   void error(Object? id, String code, String message) =>
       send({'op': 'error', 'id': id, 'code': code, 'message': message});
 
+  /// Never throws: an error here would end the channel.
   void onFrame(dynamic frame) {
+    try {
+      _onFrame(frame);
+    } on Object catch (e, s) {
+      server.log('frame: $e\n$s');
+      error(null, ErrorCode.badRequest, 'request failed');
+    }
+  }
+
+  void _onFrame(dynamic frame) {
     if (frame is List<int>) return _onData(frame);
+    final text = frame as String;
+    final cap = server.limits.requestBytes;
+    if (text.length > cap ||
+        (text.length * 3 > cap && utf8.encode(text).length > cap)) {
+      return error(
+        null,
+        ErrorCode.requestTooLarge,
+        'requests are at most $cap bytes',
+      );
+    }
     Object? message;
     try {
-      message = jsonDecode(frame as String);
+      message = jsonDecode(text);
     } on FormatException {
       return error(null, ErrorCode.badRequest, 'not JSON');
     }
@@ -228,7 +333,12 @@ final class _Connection {
     }
     switch (message['op']) {
       case 'start':
-        unawaited(_start(id, message));
+        unawaited(
+          _start(id, message).catchError((Object e) {
+            server.log('start $id: $e');
+            error(id, ErrorCode.startFailed, '$e');
+          }),
+        );
       case 'close-stdin':
         _withChild(id, (c) => c.closeStdin());
       case 'signal':
@@ -264,7 +374,7 @@ final class _Connection {
   }
 
   Future<void> _start(int id, Map<dynamic, dynamic> m) async {
-    if (byId.containsKey(id)) {
+    if (byId.containsKey(id) || _starting.contains(id)) {
       return error(id, ErrorCode.duplicateId, 'id $id is in use');
     }
     final argv = m['argv'];
@@ -273,18 +383,56 @@ final class _Connection {
     final detached = m['detached'] ?? false;
     if (argv is! List ||
         argv.isEmpty ||
-        argv.any((a) => a is! String) ||
-        (cwd != null && cwd is! String) ||
+        argv.any((a) => a is! String || a.contains('\x00')) ||
+        (argv.first as String).isEmpty ||
+        (cwd != null &&
+            (cwd is! String || !cwd.startsWith('/') || cwd.contains('\x00'))) ||
         (env != null &&
             (env is! Map ||
                 env.entries.any(
-                  (e) => e.key is! String || e.value is! String,
+                  (e) =>
+                      e.key is! String ||
+                      e.value is! String ||
+                      !_validEnvName(e.key as String) ||
+                      (e.value as String).contains('\x00'),
                 ))) ||
         detached is! bool) {
       return error(id, ErrorCode.badRequest, 'bad start request');
     }
     final args = argv.cast<String>();
     final environment = (env as Map?)?.cast<String, String>();
+    var size = 0;
+    for (final a in args) {
+      size += utf8.encode(a).length + 1;
+    }
+    environment?.forEach((k, v) => size += utf8.encode('$k=$v').length + 1);
+    if (size > server.limits.argvEnvBytes) {
+      return error(
+        id,
+        ErrorCode.requestTooLarge,
+        'argv and env are over ${server.limits.argvEnvBytes} bytes',
+      );
+    }
+    if (byId.length + _starting.length >=
+        server.limits.processesPerConnection) {
+      return error(
+        id,
+        ErrorCode.tooManyProcesses,
+        'at most ${server.limits.processesPerConnection} processes per connection',
+      );
+    }
+    if (server._children.length + server._starting >= server.limits.processes) {
+      return error(
+        id,
+        ErrorCode.tooManyProcesses,
+        'at most ${server.limits.processes} processes',
+      );
+    }
+    if (server._closing) {
+      return error(id, ErrorCode.startFailed, 'the channel is shutting down');
+    }
+    _starting.add(id);
+    server._starting++;
     try {
       final _Child child = detached
           ? await _DetachedChild.start(
@@ -303,11 +451,22 @@ final class _Connection {
             );
       byId[id] = child;
       server._children.add(child);
+      if (!server._isOpen(this)) {
+        // The owner or the channel went away while it launched.
+        child.run();
+        await child.release();
+        return;
+      }
       server._checkIdle();
       send({'op': 'started', 'id': id, 'pid': child.pid});
       child.run();
     } on ProcessException catch (e) {
       error(id, ErrorCode.startFailed, e.message.isEmpty ? '$e' : e.message);
+    } on FileSystemException catch (e) {
+      error(id, ErrorCode.startFailed, e.message);
+    } finally {
+      _starting.remove(id);
+      server._starting--;
     }
   }
 
@@ -319,16 +478,31 @@ final class _Connection {
     if (resolved == null) {
       return error(id, ErrorCode.notFound, 'no file $path in the module');
     }
-    final file = File(resolved);
+    // Only regular files: opening a FIFO would block the channel.
+    if (FileStat.statSync(resolved).type != FileSystemEntityType.file) {
+      return error(id, ErrorCode.notFound, '$path is not a regular file');
+    }
     try {
-      if (file.lengthSync() > maxReadBytes) {
+      final file = File(resolved).openSync();
+      final bytes = BytesBuilder(copy: false);
+      try {
+        // One byte more than allowed tells a file that is too large.
+        while (bytes.length <= maxReadBytes) {
+          final chunk = file.readSync(maxReadBytes + 1 - bytes.length);
+          if (chunk.isEmpty) break;
+          bytes.add(chunk);
+        }
+      } finally {
+        file.closeSync();
+      }
+      if (bytes.length > maxReadBytes) {
         return error(
           id,
           ErrorCode.tooLarge,
           '$path is over $maxReadBytes bytes',
         );
       }
-      send({'op': 'read', 'id': id, 'data': file.readAsStringSync()});
+      send({'op': 'read', 'id': id, 'data': utf8.decode(bytes.takeBytes())});
     } on FileSystemException catch (e) {
       error(id, ErrorCode.notFound, e.message);
     } on FormatException {
@@ -363,7 +537,23 @@ sealed class _Child {
 
 /// A child with stdio pipes, ended when its owner or the channel goes.
 final class _PipedChild extends _Child {
-  _PipedChild._(super.owner, super.id, this.process);
+  _PipedChild._(super.owner, super.id, this.process) {
+    // Stdin goes through a queue whose size is known: IOSink.add would hold
+    // any amount for a child that does not read. The consumer pauses the queue
+    // while the pipe is full; that is the stdin side, never stdout/stderr.
+    process.stdin
+        .addStream(
+          _stdin.stream.map((bytes) {
+            _stdinHeld -= bytes.length;
+            return bytes;
+          }),
+        )
+        .then<void>((_) => process.stdin.close())
+        .catchError((Object _) {
+          // The child closed its end.
+          _stdinClosed = true;
+        });
+  }
 
   static Future<_PipedChild> start(
     _Connection owner,
@@ -382,6 +572,8 @@ final class _PipedChild extends _Child {
   }
 
   final Process process;
+  final StreamController<List<int>> _stdin = StreamController();
+  int _stdinHeld = 0;
   bool _stdinClosed = false;
   bool _released = false;
 
@@ -407,18 +599,25 @@ final class _PipedChild extends _Child {
   @override
   void writeStdin(List<int> bytes) {
     if (_stdinClosed) return;
-    try {
-      process.stdin.add(bytes);
-    } on StateError {
-      _stdinClosed = true;
+    final cap = owner.server.limits.stdinBufferBytes;
+    // A frame is taken whole while nothing waits, whatever its size.
+    if (_stdinHeld > 0 && _stdinHeld + bytes.length > cap) {
+      owner.error(
+        id,
+        ErrorCode.stdinOverflow,
+        'over $cap stdin bytes waiting; stdin closed',
+      );
+      return closeStdin();
     }
+    _stdinHeld += bytes.length;
+    _stdin.add(bytes);
   }
 
   @override
   void closeStdin() {
     if (_stdinClosed) return;
     _stdinClosed = true;
-    unawaited(process.stdin.close().catchError((Object _) {}));
+    unawaited(_stdin.close());
   }
 
   @override
@@ -429,6 +628,7 @@ final class _PipedChild extends _Child {
     if (_released) return;
     _released = true;
     owner.byId.remove(id);
+    closeStdin();
     process.kill(ProcessSignal.sigterm);
     final exited = await process.exitCode
         .then((_) => true)
@@ -460,15 +660,17 @@ final class _DetachedChild extends _Child {
     final log = File('$stem.log');
     final exitFile = File('$stem.exit');
     await log.writeAsBytes(const []);
+    await setMode(log.path, RunModes.private);
     final shell = _shell();
     // The wrapper shell runs argv ("$@", never re-parsed) and records its exit
-    // code. Its traps are handlers, not ignores, so the child still gets the
-    // default action for signals sent to the group.
+    // code (root-only, as the log). Its traps are handlers, not ignores, so the
+    // child still gets the default action for signals sent to the group; the
+    // umask is the subshell's only, the child keeps the channel's.
     final process = await Process.start(
       shell,
       [
         '-c',
-        r'trap : TERM INT HUP USR1 USR2; exec 0</dev/null; "$@" >>"$FLUTTER_WEBUI_LOG" 2>&1; echo $? >"$FLUTTER_WEBUI_EXIT.tmp"; mv "$FLUTTER_WEBUI_EXIT.tmp" "$FLUTTER_WEBUI_EXIT"',
+        r'trap : TERM INT HUP USR1 USR2; exec 0</dev/null; "$@" >>"$FLUTTER_WEBUI_LOG" 2>&1; c=$?; (umask 077 && echo $c >"$FLUTTER_WEBUI_EXIT.tmp"); mv "$FLUTTER_WEBUI_EXIT.tmp" "$FLUTTER_WEBUI_EXIT"',
         'sh',
         ...argv,
       ],
@@ -493,23 +695,30 @@ final class _DetachedChild extends _Child {
 
   @override
   void run() {
-    _reader = log.openSync();
     _timer = Timer.periodic(owner.server.timings.tailPoll, (_) => _poll());
   }
 
   void _poll() {
-    final reader = _reader;
-    if (reader == null) return;
-    final exited = exitFile.existsSync();
-    while (true) {
-      final chunk = reader.readSync(64 * 1024);
-      if (chunk.isEmpty) break;
-      owner.sendData(StreamTag.stdout, id, chunk);
+    if (_released) return;
+    try {
+      final reader = _reader ??= log.openSync();
+      final exited = exitFile.existsSync();
+      while (true) {
+        final chunk = reader.readSync(64 * 1024);
+        if (chunk.isEmpty) break;
+        owner.sendData(StreamTag.stdout, id, chunk);
+      }
+      if (!exited) return;
+      final code = int.tryParse(exitFile.readAsStringSync().trim()) ?? -1;
+      _stop();
+      owner.finished(this, code);
+    } on FileSystemException catch (e) {
+      // The log or exit file went away (removed by hand): report what is
+      // known rather than end the channel.
+      owner.server.log('detached $pid: $e');
+      _stop();
+      owner.finished(this, -1);
     }
-    if (!exited) return;
-    final code = int.tryParse(exitFile.readAsStringSync().trim()) ?? -1;
-    _stop();
-    owner.finished(this, code);
   }
 
   void _stop() {
@@ -527,6 +736,8 @@ final class _DetachedChild extends _Child {
   /// Signals the process group the wrapper runs in.
   @override
   void signal(ProcessSignal signal) {
+    // Once the wrapper has recorded an exit its pid may be reused.
+    if (exitFile.existsSync()) return;
     final group = _processGroup(pid);
     if (group == null) return;
     Process.runSync('kill', ['-${signal.name.substring(3)}', '--', '-$group']);
@@ -558,14 +769,43 @@ int? _processGroup(int pid) {
 
 /// Keeps the 16 newest detached-process logs.
 void _pruneLogs(Directory dir) {
-  final files = dir.listSync().whereType<File>().toList()
-    ..sort((a, b) => b.path.compareTo(a.path));
+  final files =
+      dir
+          .listSync()
+          .whereType<File>()
+          .where((f) => !f.uri.pathSegments.last.startsWith('.'))
+          .toList()
+        ..sort((a, b) => b.path.compareTo(a.path));
   final keep = <String>{};
   for (final f in files) {
-    final stem = f.path.replaceFirst(RegExp(r'\.(log|exit)$'), '');
+    final stem = f.path.replaceFirst(RegExp(r'\.(log|exit|exit\.tmp)$'), '');
     if (keep.length < 16) keep.add(stem);
     if (!keep.contains(stem)) f.deleteSync();
   }
+}
+
+/// Removes the logs and exit files of an earlier boot. `.run/proc/.boot`
+/// names the boot the files are from; every channel rewrites it before it
+/// starts a process, so a different one means all files are older.
+void _clearOtherBoots(Directory dir, String boot, void Function(String) log) {
+  final marker = File('${dir.path}/.boot');
+  String? previous;
+  try {
+    previous = marker.readAsStringSync().trim();
+  } on FileSystemException {
+    // First start with this layout: nothing known, keep the files.
+  }
+  if (previous == boot) return;
+  if (previous != null) {
+    var removed = 0;
+    for (final f in dir.listSync().whereType<File>()) {
+      if (f.path == marker.path) continue;
+      f.deleteSync();
+      removed++;
+    }
+    log('removed $removed process files of boot $previous');
+  }
+  marker.writeAsStringSync(boot);
 }
 
 const Map<String, ProcessSignal> _signals = {
@@ -578,6 +818,19 @@ const Map<String, ProcessSignal> _signals = {
   'STOP': ProcessSignal.sigstop,
   'CONT': ProcessSignal.sigcont,
 };
+
+/// Compares tokens in time that depends only on their lengths.
+bool _sameToken(String given, String expected) {
+  if (given.length != expected.length) return false;
+  var diff = 0;
+  for (var i = 0; i < given.length; i++) {
+    diff |= given.codeUnitAt(i) ^ expected.codeUnitAt(i);
+  }
+  return diff == 0;
+}
+
+bool _validEnvName(String name) =>
+    name.isNotEmpty && !name.contains('=') && !name.contains('\x00');
 
 String _newToken() {
   final random = Random.secure();

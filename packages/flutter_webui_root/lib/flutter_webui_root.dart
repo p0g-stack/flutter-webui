@@ -5,5 +5,6 @@
 library;
 
 export 'protocol.dart';
-export 'src/server.dart' show ChannelTimings, RootChannelServer;
-export 'src/session_file.dart' show InstanceLock, SessionFile, readBootId;
+export 'src/server.dart' show ChannelLimits, ChannelTimings, RootChannelServer;
+export 'src/session_file.dart'
+    show InstanceLock, RunModes, SessionFile, readBootId, setMode, staleReason;
