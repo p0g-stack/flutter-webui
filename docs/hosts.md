@@ -23,12 +23,15 @@ the bootstrap forces single-threaded Skwasm, keeps hash routing and
 |---|---|---|---|---|
 | Detected as | `webui` | `webui` | `webui` | `webuix` (`ksu.mmrl` or `window.webui`) |
 | Safe-area padding | `insets.css` (`--safe-area-inset-*`), `ksu.enableEdgeToEdge(true)` | same, `ksu.enableInsets(true)` | none (host adds margins) | injected variables, `WX_ON_INSETS` (units unverified) |
-| Lifecycle | page visibility, as `web_ui` (does `webView.onPause()` fire `visibilitychange`? devicelab) | same | same | `WX_ON_PAUSE` = hidden until `WX_ON_RESUME` (`visibilityState` stays `visible`) |
+| Lifecycle | page visibility, as `web_ui`: `webView.onPause()` hides the page (by Chromium source), also for its own file chooser | page visibility: no `onPause()`, Home hides the window (inferred) | same | `WX_ON_PAUSE` = hidden until `WX_ON_RESUME`; `onPause()` also hides the page by source, so this agrees |
 | Back | WebView history: `web_ui`'s history entries turn Back into `popRoute` | same | same | `WX_ON_BACK` = `history.back()` (needs `backInterceptor: "javascript"`) |
 | `SystemNavigator.pop` at the root | history restored, then `ksu.exit()` | history restored; no exit method, the next Back closes | same | `webui.exit()` |
 | Brightness | `prefers-color-scheme` | same | same | `$<id>.isDarkMode()` on start and resume |
-| Clipboard | `navigator.clipboard`, write falls back to `execCommand('copy')`; read may be refused (a plugin can install a root-backed one) | same | same | same |
-| Keyboard inset | `web_ui` visual viewport (the WebView resizes) | same | same | same (`WX_ON_KEYBOARD` not used: WebUI X also resizes, it would count twice) |
+| Clipboard | `navigator.clipboard`: write is auto-granted (fallback `execCommand('copy')`); programmatic read is always denied by WebView, user paste in a field works (a plugin can install a root-backed read) | same | same | same (its permission handler never sees clipboard read) |
+| Keyboard inset | `web_ui` visual viewport (the WebView resizes, animated) | likely none: edge-to-edge, no soft-input mode, insets consumed without `ime()`, so the keyboard may cover the field (by source; an upstream fix if confirmed) | as KernelSU | `web_ui` visual viewport (`windowResize: true` resizes the WebView; `WX_ON_KEYBOARD` not used: toggle-only and it would count twice) |
+| Locale | `navigator.languages` = the manager's locale list (per-app language on Android 13+) plus en-US, as a browser reports its own | same; before Android 13 Next's in-app language does not reach it | same | same |
+| Fonts | no system fonts; `web_ui` loads fallbacks from `fonts/` in the module (`web_ui/tool/fallback_fonts.dart`) | same | same | same |
+| Accessibility | as Chrome on Android: TalkBack reads the DOM, "Enable accessibility" placeholder once per load | same | same | same |
 | Text scale | `textZoom = fontScale*100` reaches `web_ui` through the root font size (unverified) | same | same | same |
 | Root channel start | `ksu.exec` (blocks the page for the fork only) | same | same | `ksu.exec` (async there) |
 | Module id | `ksu.moduleInfo()` | Next: same; APatch: `<meta name="webui-module-id">` from the build | `moduleInfo()` | `moduleInfo()` |
@@ -54,6 +57,7 @@ WebUI X `webroot/config.json`:
 {
   "backInterceptor": "javascript",
   "exitConfirm": false,
+  "windowResize": true,
   "killShellWhenBackground": false,
   "pullToRefresh": false
 }
@@ -61,6 +65,8 @@ WebUI X `webroot/config.json`:
 
 - `backInterceptor: "javascript"` sends Back to the page (`WX_ON_BACK`).
 - `exitConfirm: false`: closing at the root route is closing a tab, no prompt.
+- `windowResize: true` (the default, set so it is not lost) resizes the WebView
+  for the keyboard, which is how `web_ui` sees it.
 - `killShellWhenBackground: false` keeps the root shell across Home.
 - The default CSP allows `connect-src *` (the root channel's WebSocket); a
   module that narrows it must keep `ws://127.0.0.1:*`. The dev entry
@@ -69,12 +75,18 @@ WebUI X `webroot/config.json`:
 
 ## Open (devicelab)
 
-- Whether `webView.onPause()` fires `visibilitychange` on KernelSU-family hosts.
+- `visibilityState`, `focus`, `blur` per host for Home, recents, screen off,
+  the file chooser (KernelSU and WebUI X should go hidden by source; Next by
+  window visibility, inferred).
+- The keyboard on KernelSU-Next: does `viewInsets.bottom` change when a field
+  near the bottom is focused?
 - Loopback from the page: Chromium treats 127.0.0.1 as trustworthy (no
   mixed-content block, inferred); whether newer WebViews prompt for Local
   Network Access.
 - Whether WebUI X serves `/.run/session.json` from webroot (it maps
   `/.<modId>/` to the module directory; a module id `run` would collide).
-- `WX_ON_INSETS` units; `textZoom` effect; clipboard read and write per host.
+- `WX_ON_INSETS` units; `textZoom` effect; clipboard `writeText` and long-press
+  paste per host; offline emoji with the bundled fonts.
+- Full per-topic checks: `docs/parity.md`.
 - The Dart runtime on Android (Android-built `dartaotruntime`, or the linux one
   through its bundled loader).

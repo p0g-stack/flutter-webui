@@ -48,14 +48,16 @@ packages/flutter_webui_client/ what apps import: host detection (WebUi.host), ro
                               (WebUi.connectRootChannel), test fakes. Plain Dart, stock SDK.
 packages/flutter_webui/       web plugin: handlers on the patched web_ui hooks. Needs the patched SDK.
 packages/flutter_webui_root/  the root channel (Dart, AOT snapshot) and its launcher (module/root)
-web_ui/                       VERSION (Flutter pin), patches/, tool/build_web_sdk.dart
+web_ui/                       VERSION (Flutter pin), patches/, tool/build_web_sdk.dart,
+                              tool/fallback_fonts.dart (offline fonts for webroot/fonts/)
 bootstrap/                    index.html, flutter_bootstrap.js, flutter_webui.js/.css, dev.html
-docs/                         hosts.md (behaviour per manager), root-channel.md (contract v1)
+docs/                         hosts.md (behaviour per manager), parity.md (embedder comparison per
+                              topic), root-channel.md (contract v1)
 ```
 
 ## Using it
 
-An app needs three things, which `flutter_p0g` provides (`create .` adds the
+An app needs four things, which `flutter_p0g` provides (`create .` adds the
 `webui/` platform folder, `precache` the SDK, `build webui` the module):
 
 1. **The patched web SDK.** `dart run web_ui/tool/build_web_sdk.dart --flutter
@@ -71,6 +73,10 @@ An app needs three things, which `flutter_p0g` provides (`create .` adds the
    browser or off the web, `WebUi.host` is a browser and the channel fails).
 3. **The bootstrap** laid over `web/`, built with
    `flutter build web --release --no-web-resources-cdn --pwa-strategy=none`.
+4. **Offline fonts.** A manager WebView exposes no system fonts and may be
+   offline, so `dart run web_ui/tool/fallback_fonts.dart --flutter <flutter>
+   --out <webroot>/fonts [--locales ja,...] [--all]` copies the emoji, symbol
+   and (per locale) CJK fallbacks `web_ui` asks for into the module.
 
 The patches add `dart:ui_web` hooks (`setHostViewPadding`,
 `setHostAppLifecycleState`, `setHostPlatformBrightness`, `setHostExitHandler`,
