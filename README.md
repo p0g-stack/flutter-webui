@@ -37,7 +37,7 @@ app in a browser tab, and the staple plugins work (through `webui-packages`).
 In: the patched `web_ui` and its handlers, host detection, the bootstrap and
 shims, the root channel, host fakes for tests, per-host notes.
 
-Out: plugins (`webui-packages`), the build/packaging tool (`flutterp0g_tool`,
+Out: plugins (`webui-packages`), the build/packaging tool (`flutter_p0g`,
 which also adds the `webui/` platform folder to an app), app code, work that
 must outlive the page (the app's own root process).
 
