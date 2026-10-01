@@ -87,6 +87,22 @@ void main() {
     expect(bridge.calls.last, 'webui.exit()');
   });
 
+  test(
+    'WebUI X detected late: its first event installs Back and exit',
+    () async {
+      // The probe ran before WebUI X defined its globals.
+      final early = FakeBridge.browser();
+      final hooks = FakeHooks();
+      final bridge = FakeBridge.webuix();
+      WebUiEmbedding(WebUiHost.detect(early), bridge, hooks).install();
+      expect(hooks.exitHandler, isNull);
+      bridge.eventController.add(const HostEvent('WX_ON_BACK'));
+      expect(bridge.backs, 1);
+      await hooks.exitHandler!();
+      expect(bridge.calls.last, 'webui.exit()');
+    },
+  );
+
   test('dispose stops listening', () {
     final (bridge, hooks, embedding) = install(FakeBridge.webuix());
     embedding.dispose();

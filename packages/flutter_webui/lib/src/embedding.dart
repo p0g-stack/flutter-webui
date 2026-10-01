@@ -51,16 +51,24 @@ final class WebUiEmbedding {
 
   final List<StreamSubscription<Object?>> _subscriptions = [];
 
-  /// Installs the handlers. Does nothing in a browser tab.
+  /// Installs the handlers. In a browser tab it only listens for WebUI X
+  /// events: WebUI X may define its globals after the page starts, so its
+  /// first event, not the probe, is what proves it.
   void install() {
+    _subscriptions.add(bridge.events.listen(_onWxEvent));
+    if (host.kind == WebUiHostKind.webuix) _readWxBrightness();
     if (!host.isWebUi) return;
-    hooks.setExitHandler(_exit);
+    _installExit();
     if (clipboard != null) hooks.setClipboard(clipboard);
     _installInsets();
-    if (host.kind == WebUiHostKind.webuix) {
-      _subscriptions.add(bridge.events.listen(_onWxEvent));
-      _readWxBrightness();
-    }
+  }
+
+  bool _exitInstalled = false;
+
+  void _installExit() {
+    if (_exitInstalled) return;
+    _exitInstalled = true;
+    hooks.setExitHandler(_exit);
   }
 
   void dispose() {
@@ -71,9 +79,10 @@ final class WebUiEmbedding {
   }
 
   Future<void> _exit() async {
-    if (host.ksuMethods.contains('exit')) {
+    // Asked now, not from the probe: the globals may have come later.
+    if (bridge.ksuHas('exit')) {
       bridge.callKsu('exit');
-    } else if (host.webuiMethods.contains('exit')) {
+    } else if (bridge.webuiHas('exit')) {
       bridge.callWebui('exit');
     }
     // Otherwise history is unwound and the host's own Back closes the page.
@@ -100,6 +109,7 @@ final class WebUiEmbedding {
   }
 
   void _onWxEvent(HostEvent event) {
+    _installExit();
     switch (event.type) {
       case 'WX_ON_PAUSE':
         hooks.setLifecycle(HostLifecycle.hidden);

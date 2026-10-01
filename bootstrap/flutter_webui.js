@@ -39,5 +39,8 @@
     else if (ksu && typeof ksu.enableInsets === 'function') ksu.enableInsets(true);
   } catch (e) { /* the plugin tries again */ }
 
-  window.addEventListener('flutter-first-frame', removeSplash);
+  window.addEventListener('flutter-first-frame', function () {
+    if (window.performance && performance.mark) performance.mark('flutter_webui:first-frame');
+    removeSplash();
+  });
 })();
