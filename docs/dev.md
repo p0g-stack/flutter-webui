@@ -190,11 +190,12 @@ Profiles:
 
 Back on the KernelSU-family profiles follows Chromium's history intervention,
 which `WebView.canGoBack()` honours: an entry the page left by `pushState`
-without user activation (trusted input in the last 5 s here) is skipped, and
-with nothing left the activity would finish. The model is strict (no later
-unmarking), so it reproduces devicelab's KernelSU 3.3.0 result: without the
-plugin's Back entry (`_installBackEntry` in `flutter_webui`), Back from a
-pushed route closes the page.
+without user activation (trusted input in the last 5 s here) is skipped until
+the next user activation, and with nothing left the activity would finish.
+`kernelsu` answers with `canGoBack()` as of the last history update (KernelSU
+reads it in `doUpdateVisitedHistory`), `next` and `apatch` read it at Back.
+This reproduces devicelab's results for 020ab92 and 8deba51 on KernelSU 3.3.0
+and Next v3.4.0.
 
 Output, one line each: `[bridge]` calls into the host (`ksu.exit()`,
 `ksu.enableEdgeToEdge(true)`, `ksu.exec("...")`, `$id.isDarkMode()`),

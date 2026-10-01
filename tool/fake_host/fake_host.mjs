@@ -38,7 +38,7 @@ const PROFILES = {
   // KernelSU, SukiSU: full bridge, edge-to-edge via enableEdgeToEdge, insets.css.
   kernelsu: {
     ksu: ['exec', 'spawn', 'toast', 'fullScreen', 'enableEdgeToEdge', 'moduleInfo', 'listPackages', 'getPackagesInfo', 'exit'],
-    insetsCss: true, insets: [24, 0, 48, 0], missing: 'empty200',
+    insetsCss: true, insets: [24, 0, 48, 0], missing: 'empty200', cachedCanGoBack: true,
   },
   // KernelSU Next: enableInsets, no exit.
   next: {
@@ -271,7 +271,7 @@ async function main() {
   });
   await page.addInitScript(installBridge, cfg);
   await page.addInitScript(pageWatch);
-  if (!profile.wx && !profile.bare) await page.addInitScript(historyModel);
+  if (!profile.wx && !profile.bare) await page.addInitScript(historyModel, !!profile.cachedCanGoBack);
 
   await page.route(`${ORIGIN}/**`, async (route) => {
     const url = new URL(route.request().url());
@@ -328,9 +328,11 @@ function fulfillMissing(route, profile) {
 }
 
 // WebView.canGoBack() as Chromium answers it: its history intervention skips
-// an entry the page left by pushState without user activation (modelled
-// strictly: no later unmarking). Tracks the session history of this document.
-function historyModel() {
+// an entry the page left by pushState without user activation, and user
+// activation unmarks the document's skipped entries. KernelSU reads
+// canGoBack() only on doUpdateVisitedHistory (pushState, replaceState,
+// traversals); Next reads it at Back. Tracks this document's session history.
+function historyModel(cached) {
   const h = window.history;
   const model = { entries: [{ skip: false }], index: 0 };
   window.__fakeHostHistory = model;
@@ -339,28 +341,46 @@ function historyModel() {
   let activatedAt = -Infinity;
   const activeNow = () => performance.now() - activatedAt < 5000;
   for (const type of ['keydown', 'mousedown', 'pointerup', 'touchend']) {
-    window.addEventListener(type, (e) => { if (e.isTrusted) activatedAt = performance.now(); }, true);
+    window.addEventListener(type, (e) => {
+      if (!e.isTrusted) return;
+      activatedAt = performance.now();
+      for (const entry of model.entries) entry.skip = false;
+    }, true);
   }
   const push = h.pushState.bind(h);
+  const replace = h.replaceState.bind(h);
   const go = h.go.bind(h);
+  const offset = () => {
+    for (let i = model.index - 1; i >= 0; i--) if (!model.entries[i].skip) return i - model.index;
+    return 0;
+  };
+  let seen = 0; // canGoBack() as of the last doUpdateVisitedHistory
+  const visited = () => { seen = offset(); };
   h.pushState = (...args) => {
     if (!activeNow()) model.entries[model.index].skip = true;
     model.entries.length = model.index + 1;
     model.entries.push({ skip: false });
     model.index++;
-    return push(...args);
+    const r = push(...args);
+    visited();
+    return r;
+  };
+  h.replaceState = (...args) => {
+    const r = replace(...args);
+    visited();
+    return r;
   };
   h.go = (n = 0) => {
     model.index = Math.max(0, Math.min(model.entries.length - 1, model.index + n));
     return go(n);
   };
+  window.addEventListener('popstate', visited, true);
+  visited();
   h.back = () => h.go(-1);
   h.forward = () => h.go(1);
-  // Offset of the entry WebView.goBack() goes to, or 0 when canGoBack() is false.
-  model.backOffset = () => {
-    for (let i = model.index - 1; i >= 0; i--) if (!model.entries[i].skip) return i - model.index;
-    return 0;
-  };
+  // Offset of the entry WebView.goBack() goes to, or 0 when the host's
+  // canGoBack() is false (KernelSU: as last seen).
+  model.backOffset = () => (cached && !seen ? 0 : offset());
 }
 
 async function sendEvent(page, event, profile) {

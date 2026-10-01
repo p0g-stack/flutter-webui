@@ -136,6 +136,31 @@ void main() {
     expect(bridge.historyGos, hasLength(2));
   });
 
+  test(
+    'Next: popped at the root, history unwinds to the first entry',
+    () async {
+      final (bridge, hooks, _) = install(FakeBridge.next());
+      const origin = {'origin': true, 'state': null};
+      bridge.activationController.add(null);
+      await hooks.exitHandler!();
+      // web_ui's teardown lands on our origin entry: one more step back.
+      expect(bridge.popState(origin), isFalse);
+      expect(bridge.historyGos, [-1]);
+      expect(bridge.popState(origin), isFalse);
+      expect(bridge.historyGos, [-1], reason: 'only once');
+    },
+  );
+
+  test(
+    'Next: without a gesture, teardown alone reaches the first entry',
+    () async {
+      final (bridge, hooks, _) = install(FakeBridge.next());
+      await hooks.exitHandler!();
+      expect(bridge.popState(const {'origin': true, 'state': null}), isFalse);
+      expect(bridge.historyGos, isEmpty);
+    },
+  );
+
   test('KernelSU: an app on its own history entries is left alone', () {
     final (bridge, _, _) = install(FakeBridge.kernelsu());
     bridge.historyState = {'serialCount': 1, 'state': null};

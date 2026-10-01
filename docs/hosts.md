@@ -115,6 +115,15 @@ kept reachable after the first gesture, 8deba51). Verified with demo e511324
 (run 36857376482): the first Back returns to the home route, the second at
 the root closes WebUIActivity.
 
+KernelSU Next v3.4.0, same demo (run 36863177354): Back from a pushed route
+returns to the home route, but at the root it took more than one extra Back
+to close. Next has no exit method, so `SystemNavigator.pop` only unwinds
+history (as in a browser tab, where the next Back leaves the page), and with
+the plugin's origin entry the unwinding stopped one entry short; a tap also
+unmarks skipped entries, so Next's live `canGoBack()` stayed true. Since the
+next commit the unwinding reaches the page's first entry, so the Back after
+the root pop closes the page (fake host; awaits devicelab).
+
 ## Open (devicelab)
 
 

@@ -82,16 +82,23 @@ final class WebUiEmbedding {
   /// origin entry stays reachable for every later Back. When the app pops at
   /// its root, [_exit] stands down and `web_ui` unwinds history as usual.
   void _installBackEntry() {
-    var armed = false;
     var forwarding = false;
     bridge.popStateFilter = (state) {
-      if (_exiting) return false;
+      if (_exiting) {
+        // web_ui's teardown has gone back to our origin entry; one more step
+        // reaches the page's first entry, where the host's Back finishes.
+        if (_unwindOneMore && _isOriginEntry(state)) {
+          _unwindOneMore = false;
+          bridge.historyGo(-1);
+        }
+        return false;
+      }
       if (forwarding && _isFlutterEntry(state)) {
         forwarding = false;
         hooks.popRoute();
         return true;
       }
-      if (armed && !forwarding && _isOriginEntry(state)) {
+      if (_backArmed && !forwarding && _isOriginEntry(state)) {
         forwarding = true;
         bridge.historyGo(1);
         return true;
@@ -100,13 +107,13 @@ final class WebUiEmbedding {
     };
     _subscriptions.add(
       bridge.userActivations.listen((_) {
-        if (armed || _exiting) return;
+        if (_backArmed || _exiting) return;
         final state = bridge.historyState;
         if (!_isFlutterEntry(state)) return;
         bridge
           ..historyReplaceState(const {'origin': true, 'state': null})
           ..historyPushState(state);
-        armed = true;
+        _backArmed = true;
       }),
     );
   }
@@ -135,6 +142,12 @@ final class WebUiEmbedding {
 
   bool _exiting = false;
 
+  /// Whether `_installBackEntry` added its origin entry.
+  bool _backArmed = false;
+
+  /// Set on exit without an exit method once the origin entry was added.
+  bool _unwindOneMore = false;
+
   Future<void> _exit() async {
     _exiting = true;
     // Asked now, not from the probe: the globals may have come later.
@@ -142,8 +155,12 @@ final class WebUiEmbedding {
       bridge.callKsu('exit');
     } else if (bridge.webuiHas('exit')) {
       bridge.callWebui('exit');
+    } else {
+      // web_ui unwinds history; then one more step reaches the page's first
+      // entry, so the host's next Back closes the page (KernelSU Next,
+      // APatch).
+      _unwindOneMore = _backArmed;
     }
-    // Otherwise history is unwound and the host's own Back closes the page.
   }
 
   void _installInsets() {
