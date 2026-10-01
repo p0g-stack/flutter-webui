@@ -152,4 +152,8 @@ class FakeBridge implements HostBridge {
 
   @override
   void historyBack() => backs++;
+
+  /// `history.length`; WebUI X v438 pages report 1 at the root route.
+  @override
+  int historyLength = 2;
 }

@@ -5,6 +5,7 @@ import 'dart:js_interop';
 import 'dart:ui' as ui;
 import 'dart:ui_web' as ui_web;
 
+import 'package:flutter/services.dart';
 import 'package:flutter_webui_client/flutter_webui_client.dart';
 import 'package:web/web.dart' as web;
 
@@ -46,6 +47,13 @@ final class UiWebHooks implements EngineHooks {
   @override
   void setClipboard(TextClipboard? clipboard) => ui_web.setHostClipboard(
     clipboard == null ? null : _EngineClipboard(clipboard),
+  );
+
+  @override
+  void popRoute() => ui.channelBuffers.push(
+    SystemChannels.navigation.name,
+    const JSONMethodCodec().encodeMethodCall(const MethodCall('popRoute')),
+    (_) {},
   );
 }
 

@@ -1,4 +1,4 @@
-From fe89ebd7a0de851cb50d7826fc4b19215115b548 Mon Sep 17 00:00:00 2001
+From a20b3f7d78c75e9b5955d8b535122f8852c8cc42 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 1 Oct 2026 05:35:35 +0000
 Subject: [PATCH 3/5] [web] SystemNavigator.pop and brightness from the host
@@ -11,7 +11,7 @@ when it reports one, else prefers-color-scheme.
  1 file changed, 29 insertions(+), 6 deletions(-)
 
 diff --git a/engine/src/flutter/lib/web_ui/lib/src/engine/platform_dispatcher.dart b/engine/src/flutter/lib/web_ui/lib/src/engine/platform_dispatcher.dart
-index bfc15058b57..e5c8fff1751 100644
+index bfc15058b57..1783fa44c9b 100644
 --- a/engine/src/flutter/lib/web_ui/lib/src/engine/platform_dispatcher.dart
 +++ b/engine/src/flutter/lib/web_ui/lib/src/engine/platform_dispatcher.dart
 @@ -83,6 +83,7 @@ class EnginePlatformDispatcher extends ui.PlatformDispatcher {
@@ -33,12 +33,12 @@ index bfc15058b57..e5c8fff1751 100644
 +            final Future<void> Function()? hostExit = HostEmbedding.instance.exitHandler;
 +            final Future<void> done;
 +            if (hostExit != null) {
-+              // Restore the history the page started with, then let the host
-+              // close the page: there may be no entry before it to go back to,
-+              // and waiting for that popstate would never end.
-+              done = (implicitView?.browserHistory.tearDown() ?? Future<void>.value()).then(
-+                (_) => hostExit(),
-+              );
++              // Start restoring the history the page started with (a host
++              // without an exit leaves the next Back to it), but do not wait
++              // for it: when the page has no entry to go back to, the popstate
++              // never comes.
++              implicitView?.browserHistory.tearDown();
++              done = hostExit();
              } else {
 -              replyToPlatformMessage(callback, jsonCodec.encodeSuccessEnvelope(true));
 +              done = implicitView?.browserHistory.exit() ?? Future<void>.value();

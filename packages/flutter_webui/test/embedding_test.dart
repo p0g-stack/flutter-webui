@@ -103,6 +103,13 @@ void main() {
     },
   );
 
+  test('WebUI X: Back with a single history entry goes to popRoute', () {
+    final (bridge, hooks, _) = install(FakeBridge.webuix()..historyLength = 1);
+    bridge.eventController.add(const HostEvent('WX_ON_BACK'));
+    expect(bridge.backs, 0);
+    expect(hooks.popRoutes, 1);
+  });
+
   test('dispose stops listening', () {
     final (bridge, hooks, embedding) = install(FakeBridge.webuix());
     embedding.dispose();

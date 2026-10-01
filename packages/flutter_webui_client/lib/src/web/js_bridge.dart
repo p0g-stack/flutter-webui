@@ -194,4 +194,7 @@ final class JsHostBridge implements HostBridge {
 
   @override
   void historyBack() => web.window.history.back();
+
+  @override
+  int get historyLength => web.window.history.length;
 }

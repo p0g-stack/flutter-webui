@@ -20,6 +20,9 @@ abstract interface class EngineHooks {
   void setBrightness(HostBrightness? brightness);
   void setExitHandler(Future<void> Function()? handler);
   void setClipboard(TextClipboard? clipboard);
+
+  /// Delivers a `popRoute` to the framework, as a platform Back does.
+  void popRoute();
 }
 
 /// A text clipboard (the engine's `HostClipboard`).
@@ -117,7 +120,15 @@ final class WebUiEmbedding {
         hooks.setLifecycle(null);
         _readWxBrightness();
       case 'WX_ON_BACK':
-        bridge.historyBack();
+        // As a browser's Back: through history, where web_ui turns it into
+        // popRoute. WebUI X pages can have a single history entry (devicelab:
+        // length 1 at the root route), where history.back() does nothing;
+        // then hand the framework the popRoute directly.
+        if (bridge.historyLength > 1) {
+          bridge.historyBack();
+        } else {
+          hooks.popRoute();
+        }
       case 'WX_ON_INSETS':
         final insets = _insetsFrom(event.data);
         if (insets != null) hooks.setViewPadding(insets);

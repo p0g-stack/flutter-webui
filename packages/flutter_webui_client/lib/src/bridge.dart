@@ -93,4 +93,7 @@ abstract interface class HostBridge {
 
   /// `window.history.back()`.
   void historyBack();
+
+  /// `window.history.length`.
+  int get historyLength;
 }

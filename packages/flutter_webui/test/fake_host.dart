@@ -37,6 +37,11 @@ class FakeHooks implements EngineHooks {
 
   @override
   void setClipboard(TextClipboard? c) => clipboard = c;
+
+  int popRoutes = 0;
+
+  @override
+  void popRoute() => popRoutes++;
 }
 
 class FakeClipboard implements TextClipboard {
