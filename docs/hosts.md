@@ -122,7 +122,8 @@ history (as in a browser tab, where the next Back leaves the page), and with
 the plugin's origin entry the unwinding stopped one entry short; a tap also
 unmarks skipped entries, so Next's live `canGoBack()` stayed true. Since
 9ee7918 the unwinding reaches the page's first entry, so the Back after
-the root pop closes the page (fake host; awaits devicelab).
+the root pop closes the page. Verified with demo 4ecb310 (run 36867879913),
+with KernelSU 3.3.0 and WebUI X v438 unchanged (run 36867884161).
 
 ## Open (devicelab)
 
