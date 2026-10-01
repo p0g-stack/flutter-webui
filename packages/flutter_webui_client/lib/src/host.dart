@@ -70,8 +70,14 @@ final class WebUiHost {
     final kind = ksu.contains('mmrl') || webui.isNotEmpty
         ? WebUiHostKind.webuix
         : WebUiHostKind.webui;
-    final info = ksu.contains('moduleInfo') ? bridge.moduleInfo() : null;
-    final id = _nonEmpty(info?['id']) ?? _nonEmpty(bridge.meta(moduleIdMeta));
+    // The build's <meta> first: KernelSU's moduleInfo() runs `ksud module
+    // list` through a root shell on the page's thread, which delays the first
+    // frame. It is only the fallback for pages without the tag.
+    final metaId = _nonEmpty(bridge.meta(moduleIdMeta));
+    final info = metaId == null && ksu.contains('moduleInfo')
+        ? bridge.moduleInfo()
+        : null;
+    final id = metaId ?? _nonEmpty(info?['id']);
     final dir =
         _nonEmpty(info?['moduleDir']) ??
         (id == null ? null : '/data/adb/modules/$id');
@@ -92,7 +98,7 @@ final class WebUiHost {
   /// WebUI X `webui` methods that exist.
   final Set<String> webuiMethods;
 
-  /// The module id, from `ksu.moduleInfo()` or the build's `<meta>` tag.
+  /// The module id, from the build's `<meta>` tag or else `ksu.moduleInfo()`.
   final String? moduleId;
 
   /// The module directory (`/data/adb/modules/<id>`).

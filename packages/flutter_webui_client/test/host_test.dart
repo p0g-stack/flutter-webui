@@ -21,6 +21,14 @@ void main() {
     expect(host.canExit, isTrue);
   });
 
+  test('the build meta tag wins over moduleInfo, which is not called', () {
+    final bridge = FakeBridge.kernelsu()..metaId = 'built';
+    final host = WebUiHost.detect(bridge);
+    expect(host.moduleId, 'built');
+    expect(host.moduleDir, '/data/adb/modules/built');
+    expect(bridge.moduleInfoCalls, 0);
+  });
+
   test('KernelSU Next: webui without exit', () {
     final host = WebUiHost.detect(FakeBridge.next());
     expect(host.kind, WebUiHostKind.webui);

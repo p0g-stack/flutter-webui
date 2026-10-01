@@ -82,13 +82,16 @@ class FakeBridge implements HostBridge {
   final Set<String> ksu;
   final Set<String> webui;
   final Map<String, Object?>? info;
-  final String? metaId;
+  String? metaId;
   bool? darkMode;
   Insets? insets;
 
   final List<String> calls = [];
   final List<String> execs = [];
   int backs = 0;
+
+  /// `ksu.moduleInfo()` calls (a root shell round trip on KernelSU).
+  int moduleInfoCalls = 0;
   final StreamController<HostEvent> eventController =
       StreamController.broadcast(sync: true);
   final StreamController<void> insetsController = StreamController.broadcast(
@@ -118,7 +121,10 @@ class FakeBridge implements HostBridge {
   }
 
   @override
-  Map<String, Object?>? moduleInfo() => info;
+  Map<String, Object?>? moduleInfo() {
+    moduleInfoCalls++;
+    return info;
+  }
 
   @override
   Object? callModuleGlobal(String moduleId, String name) {

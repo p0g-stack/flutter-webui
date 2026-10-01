@@ -34,7 +34,7 @@ the bootstrap forces single-threaded Skwasm, keeps hash routing and
 | Accessibility | as Chrome on Android: TalkBack reads the DOM, "Enable accessibility" placeholder once per load | same | same | same |
 | Text scale | `textZoom = fontScale*100` reaches `web_ui` through the root font size (unverified) | same | same | same |
 | Root channel start | `ksu.exec` (blocks the page for the fork only) | same | same | `ksu.exec` (async there) |
-| Module id | `ksu.moduleInfo()` | Next: same; APatch: `<meta name="webui-module-id">` from the build | `moduleInfo()` | `moduleInfo()` |
+| Module id | `<meta name="webui-module-id">` from the build; `ksu.moduleInfo()` only without it (it runs `ksud module list` through the root shell on the page thread) | same | same | same |
 
 ## Lifetime
 
