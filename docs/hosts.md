@@ -111,7 +111,9 @@ KernelSU enables its Back handler from `canGoBack()`, read in
 `doUpdateVisitedHistory`, and Chromium's history intervention leaves
 `web_ui`'s startup entry out of it because it was pushed without user
 activation. Reproduced in the fake host and fixed in the plugin (Back entry
-kept reachable after the first gesture); the fix awaits a devicelab run.
+kept reachable after the first gesture, 8deba51). Verified with demo e511324
+(run 36857376482): the first Back returns to the home route, the second at
+the root closes WebUIActivity.
 
 ## Open (devicelab)
 
