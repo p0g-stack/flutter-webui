@@ -1,0 +1,17 @@
+{
+  "name": "flutter-webui-fake-host",
+  "private": true,
+  "description": "A fake root manager (KernelSU, Next, APatch, WebUI X) in headless Chromium for flutter-webui pages. See docs/dev.md.",
+  "license": "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception",
+  "type": "module",
+  "bin": {
+    "fake_host": "fake_host.mjs",
+    "webui_dev_server": "dev_server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "playwright": "1.56.1"
+  }
+}

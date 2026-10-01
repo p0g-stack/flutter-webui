@@ -4,3 +4,4 @@ pubspec.lock
 pubspec_overrides.yaml
 *.aot
 /out/
+node_modules/

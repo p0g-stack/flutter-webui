@@ -51,8 +51,9 @@ packages/flutter_webui_root/  the root channel (Dart, AOT snapshot) and its laun
 web_ui/                       VERSION (Flutter pin), patches/, tool/build_web_sdk.dart,
                               tool/fallback_fonts.dart (offline fonts for webroot/fonts/)
 bootstrap/                    index.html, flutter_bootstrap.js, flutter_webui.js/.css, dev.html
+tool/fake_host/               fake manager in headless Chromium (fake_host.mjs), reference dev server (dev_server.mjs)
 docs/                         hosts.md (behaviour per manager), parity.md (embedder comparison per
-                              topic), root-channel.md (contract v1)
+                              topic), root-channel.md (contract v1), dev.md (dev loop, fake host)
 ```
 
 ## Using it
@@ -77,6 +78,12 @@ An app needs four things, which `flutter_p0g` provides (`create .` adds the
    offline, so `dart run web_ui/tool/fallback_fonts.dart --flutter <flutter>
    --out <webroot>/fonts [--locales ja,...] [--all]` copies the emoji, symbol
    and (per locale) CJK fallbacks `web_ui` asks for into the module.
+
+**Dev loop** (`flutter_p0g run webui`, docs/dev.md): the module's page stays
+on the manager's origin and loads the app from `flutter run -d web-server` on
+the dev machine through `adb reverse`, with hot restart. To check a build
+without a phone: `node tool/fake_host/fake_host.mjs --webroot build/web --host
+kernelsu|next|apatch|webuix|browser`.
 
 The patches add `dart:ui_web` hooks (`setHostViewPadding`,
 `setHostAppLifecycleState`, `setHostPlatformBrightness`, `setHostExitHandler`,

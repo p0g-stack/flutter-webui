@@ -70,8 +70,9 @@ WebUI X `webroot/config.json`:
 - `killShellWhenBackground: false` keeps the root shell across Home.
 - The default CSP allows `connect-src *` (the root channel's WebSocket); a
   module that narrows it must keep `ws://127.0.0.1:*`. The dev entry
-  (`bootstrap/dev.html`) also needs `http://127.0.0.1:*` in `script-src` and
-  `default-src`.
+  (`bootstrap/dev.html`) also needs the dev server, `http://127.0.0.1:<port>`,
+  in `script-src` and `style-src` (or `default-src`), and `'unsafe-inline'`
+  for its inline scripts (docs/dev.md).
 
 ## Open (devicelab)
 
@@ -80,9 +81,10 @@ WebUI X `webroot/config.json`:
   window visibility, inferred).
 - The keyboard on KernelSU-Next: does `viewInsets.bottom` change when a field
   near the bottom is focused?
-- Loopback from the page: Chromium treats 127.0.0.1 as trustworthy (no
-  mixed-content block, inferred); whether newer WebViews prompt for Local
-  Network Access.
+- Loopback from the page: no mixed-content block for `http://127.0.0.1` (seen
+  in Chromium 141), but Chromium 141 gates a public page's requests to
+  loopback behind the Local Network Access permission (docs/dev.md); whether
+  a manager's WebView enforces it, and for the root channel's WebSocket too.
 - Whether WebUI X serves `/.run/session.json` from webroot (it maps
   `/.<modId>/` to the module directory; a module id `run` would collide).
 - `WX_ON_INSETS` units; `textZoom` effect; clipboard `writeText` and long-press
