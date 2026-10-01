@@ -24,3 +24,7 @@ Self-contained; no external base file.
 - Never pause a `dart:io` process stdout/stderr subscription in the root
   channel: on Dart 3.13.4 a resumed pipe can miss its wake-up and stall the
   child for good.
+- The root channel runs on Android under a glibc runtime, where resolving
+  outside hostnames fails. Use IP literals only (it binds `127.0.0.1`), and
+  ship `dartaotruntime` plus a `.aot` snapshot, never a `dart compile exe`
+  binary (it cannot run through the bundled loader).
