@@ -12,7 +12,8 @@ import 'support.dart';
 
 void main() {
   late Directory moduleDir;
-  late Directory webroot;
+  late Directory runDir;
+  late MemoryConfig config;
   RootChannelServer? server;
 
   Future<RootChannelServer> start({
@@ -22,19 +23,22 @@ void main() {
     ),
   }) async => server = await RootChannelServer.start(
     moduleDir: moduleDir,
+    runDir: runDir,
+    store: SessionStore(config),
     limits: limits,
     timings: timings,
   );
 
   Future<Client> connect() async {
-    final client = await Client.connect(SessionFile(webroot).read()!);
+    final client = await Client.connect((await SessionStore(config).read())!);
     expect((await client.next())['op'], 'hello');
     return client;
   }
 
   setUp(() async {
     moduleDir = await Directory.systemTemp.createTemp('module');
-    webroot = Directory('${moduleDir.path}/webroot');
+    runDir = Directory('${moduleDir.path}/flutter_webui/run');
+    config = MemoryConfig();
   });
 
   tearDown(() async {
@@ -44,43 +48,18 @@ void main() {
   });
 
   group('file modes', () {
-    test('run directory, proc directory, session.json and lock', () async {
+    test('run directory, proc directory and lock', () async {
       // As an earlier channel left them.
-      Directory('${webroot.path}/.run/proc').createSync(recursive: true);
-      await setMode('${webroot.path}/.run', '755');
-      await setMode('${webroot.path}/.run/proc', '755');
-      File('${webroot.path}/$sessionFilePath').writeAsStringSync('{}');
-      await setMode('${webroot.path}/$sessionFilePath', '666');
+      Directory('${runDir.path}/proc').createSync(recursive: true);
+      await setMode(runDir.path, '755');
+      await setMode('${runDir.path}/proc', '755');
 
-      final lock = (await InstanceLock.acquire(webroot))!;
+      final lock = (await InstanceLock.acquire(runDir))!;
       await start();
-      expect(modeOf('${webroot.path}/.run'), RunModes.runDir);
-      expect(modeOf('${webroot.path}/.run/proc'), RunModes.procDir);
-      expect(modeOf('${webroot.path}/$sessionFilePath'), RunModes.session);
-      expect(modeOf('${webroot.path}/.run/lock'), RunModes.private);
+      expect(modeOf(runDir.path), RunModes.dir);
+      expect(modeOf('${runDir.path}/proc'), RunModes.dir);
+      expect(modeOf('${runDir.path}/lock'), RunModes.private);
       await lock.release();
-    });
-
-    test('session.json is written through a tmp file with its mode', () async {
-      final session = SessionFile(webroot);
-      final info = SessionInfo(
-        protocol: protocolVersion,
-        version: channelVersion,
-        port: 1,
-        token: 't',
-        pid: pid,
-        boot: 'b',
-        started: DateTime.utc(2026),
-      );
-      // A tmp file of a killed channel with this pid, world-writable.
-      Directory('${webroot.path}/.run').createSync(recursive: true);
-      final tmp = File('${session.file.path}.$pid.tmp')
-        ..writeAsStringSync('junk');
-      await setMode(tmp.path, '666');
-      await session.write(info);
-      expect(tmp.existsSync(), isFalse);
-      expect(session.read()!.token, 't');
-      expect(modeOf(session.file.path), RunModes.session);
     });
 
     test('detached logs and exit files are root-only', () async {
@@ -93,7 +72,7 @@ void main() {
         'argv': ['/bin/true'],
       });
       await client.nextOp('exit');
-      final files = Directory('${webroot.path}/.run/proc')
+      final files = Directory('${runDir.path}/proc')
           .listSync()
           .whereType<File>()
           .where((f) => !f.path.endsWith('/.boot'));
@@ -162,29 +141,16 @@ void main() {
       expect(staleReason(old(pid: pid), boot: readBootId()), isNull);
     });
 
-    test('a stale session.json and leftover tmp files are replaced', () async {
-      final session = SessionFile(webroot);
-      await session.write(old(pid: 0x7ffffffe));
-      final leftover = File('${session.file.path}.12345.tmp')
-        ..writeAsStringSync('{"token":"old"}');
+    test('exit leaves a session that names another pid', () async {
       await start();
-      final info = session.read()!;
-      expect(info.pid, pid);
-      expect(info.token, isNot('old'));
-      expect(leftover.existsSync(), isFalse);
-    });
-
-    test('exit leaves a session.json that names another pid', () async {
-      await start();
-      final session = SessionFile(webroot);
-      final other = old(pid: 4242);
-      await session.write(other);
+      final store = SessionStore(config);
+      await store.write(old(pid: 4242));
       await server!.shutdown();
-      expect(session.read()?.pid, 4242);
+      expect((await store.read())?.pid, 4242);
     });
 
     test('process files of an earlier boot are removed', () async {
-      final proc = Directory('${webroot.path}/.run/proc')
+      final proc = Directory('${runDir.path}/proc')
         ..createSync(recursive: true);
       File('${proc.path}/.boot').writeAsStringSync('earlier-boot');
       File('${proc.path}/1-0.log').writeAsStringSync('old');
@@ -251,7 +217,7 @@ void main() {
       await start(limits: const ChannelLimits(connections: 1));
       final a = await connect();
       await expectLater(
-        Client.connect(SessionFile(webroot).read()!),
+        Client.connect((await SessionStore(config).read())!),
         throwsA(isA<WebSocketException>()),
       );
       await a.close();
@@ -453,7 +419,8 @@ void main() {
       )..writeAsStringSync('secret');
       addTearDown(outside.deleteSync);
       Link('${moduleDir.path}/escape').createSync(outside.path);
-      Link('${moduleDir.path}/inside').createSync('${moduleDir.path}/webroot');
+      final webroot = Directory('${moduleDir.path}/webroot')..createSync();
+      Link('${moduleDir.path}/inside').createSync(webroot.path);
       File('${webroot.path}/f').writeAsStringSync('ok');
       client.send({'op': 'read', 'id': 1, 'path': '${moduleDir.path}/escape'});
       expect((await client.next())['code'], ErrorCode.notFound);
@@ -468,7 +435,7 @@ void main() {
 
     test('a token of the right length but wrong value is refused', () async {
       await start();
-      final info = SessionFile(webroot).read()!;
+      final info = (await SessionStore(config).read())!;
       final forged = info.token.replaceRange(
         0,
         1,
@@ -482,7 +449,7 @@ void main() {
 
     test('broken and aborted requests do not end the channel', () async {
       await start();
-      final info = SessionFile(webroot).read()!;
+      final info = (await SessionStore(config).read())!;
       for (final request in [
         'GET /v1?token=%zz HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n',
         'GET /v1?token=${info.token} HTTP/1.1\r\nHost: 127.0.0.1\r\n'
@@ -506,7 +473,7 @@ void main() {
 
     test('a second Origin header is refused', () async {
       await start();
-      final info = SessionFile(webroot).read()!;
+      final info = (await SessionStore(config).read())!;
       final socket = await Socket.connect(
         InternetAddress.loopbackIPv4,
         info.port,
@@ -525,7 +492,7 @@ void main() {
 
     test('no permessage-deflate', () async {
       await start();
-      final info = SessionFile(webroot).read()!;
+      final info = (await SessionStore(config).read())!;
       final socket = await Socket.connect(
         InternetAddress.loopbackIPv4,
         info.port,

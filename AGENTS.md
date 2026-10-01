@@ -12,6 +12,10 @@ Self-contained; no external base file.
   `docs/hosts.md`.
 - The root channel stays a channel: transport and process launch only. A
   feature on top lives with its owner (handler, plugin, app).
+- Nothing of the root channel goes in `webroot/` (the manager serves it). Its
+  session and boot marker are in `ksud module config` tmp.config (required),
+  its lock and logs in `<moddir>/flutter_webui/run/`; the page learns the
+  session only from `root start`'s output.
 - Every string that reaches `ksu.exec` / `ksu.spawn` is quoted here, not by the
   caller.
 - Hidden keeps running, closed stops. Ship WebUI X `config.json` with

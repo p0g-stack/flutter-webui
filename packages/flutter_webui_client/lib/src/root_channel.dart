@@ -7,15 +7,12 @@ import 'dart:typed_data';
 
 import 'package:flutter_webui_root/protocol.dart';
 
+import 'bridge.dart';
 import 'quote.dart';
 
-/// Moves bytes for [RootChannel]: reads `session.json` and opens the socket.
-/// The web implementation uses `fetch` and `WebSocket`; tests use `dart:io`.
+/// Opens the socket for [RootChannel]. The web implementation uses the
+/// browser `WebSocket`; tests use `dart:io`.
 abstract interface class ChannelTransport {
-  /// The text of `webroot/.run/session.json`, or null if it is missing or
-  /// empty (KernelSU answers a missing file with an empty 200).
-  Future<String?> readSession();
-
   /// Opens the WebSocket.
   Future<ChannelSocket> connect(Uri uri);
 }
@@ -29,11 +26,11 @@ abstract interface class ChannelSocket {
   Future<void> close();
 }
 
-/// Starts the channel through the bridge (see [channelStartCommand]) and
-/// returns when the command has returned.
-typedef ChannelStarter = Future<void> Function();
+/// Runs `root start` through the bridge (see [channelStartCommand]): it finds
+/// or starts the channel and prints its session as one JSON line.
+typedef ChannelStarter = Future<ExecResult> Function();
 
-/// The command line that starts the channel for [moduleDir].
+/// The command line that finds or starts the channel for [moduleDir].
 String channelStartCommand(String moduleDir) =>
     shellCommand(['sh', '$moduleDir/flutter_webui/root', 'start']);
 
@@ -63,43 +60,42 @@ final class RootChannel {
 
   /// Finds or starts the channel and connects.
   ///
-  /// Reads `session.json`; if it names a channel of this version that accepts
-  /// the connection, uses it. Otherwise asks a channel of another version to
-  /// shut down, calls [start], and waits for a new `session.json`.
+  /// Runs [start] (`root start`), which prints the session of a live channel
+  /// of this version, starting one if needed, and connects to it. Tries once
+  /// more if the channel it named went away before the connection (it was
+  /// exiting while idle).
   static Future<RootChannel> connect({
     required ChannelTransport transport,
     required ChannelStarter start,
-    Duration timeout = const Duration(seconds: 5),
-    Duration poll = const Duration(milliseconds: 50),
+    int attempts = 2,
   }) async {
-    final existing = _parse(await transport.readSession());
-    if (existing != null) {
-      final channel = await _tryOpen(transport, existing);
-      if (channel != null) {
-        if (existing.version == channelVersion) return channel;
-        await channel.shutdown();
+    var problem = 'not tried';
+    for (var i = 0; i < attempts; i++) {
+      final result = await start();
+      final info = parseSession(result.stdout);
+      if (result.exitCode != 0 || info == null) {
+        final err = result.stderr.trim();
+        problem =
+            'root start exited ${result.exitCode}'
+            '${err.isEmpty ? '' : ': $err'}';
+        continue;
       }
+      final channel = await _tryOpen(transport, info);
+      if (channel != null) return channel;
+      problem =
+          'the channel at port ${info.port} did not accept the connection';
     }
-    await start();
-    final deadline = DateTime.now().add(timeout);
-    while (DateTime.now().isBefore(deadline)) {
-      final info = _parse(await transport.readSession());
-      if (info != null && info.pid != existing?.pid) {
-        final channel = await _tryOpen(transport, info);
-        if (channel != null) return channel;
-      }
-      await Future<void>.delayed(poll);
-    }
-    throw const RootChannelException(
-      'unavailable',
-      'the root channel did not start; see webroot/.run/root.log',
-    );
+    throw RootChannelException('unavailable', problem);
   }
 
-  static SessionInfo? _parse(String? text) {
-    if (text == null || text.trim().isEmpty) return null;
+  /// The session in `root start`'s output: its last non-empty line.
+  static SessionInfo? parseSession(String stdout) {
+    final lines = const LineSplitter()
+        .convert(stdout)
+        .where((l) => l.trim().isNotEmpty);
+    if (lines.isEmpty) return null;
     try {
-      return SessionInfo.fromJson(jsonDecode(text));
+      return SessionInfo.fromJson(jsonDecode(lines.last));
     } on FormatException {
       return null;
     }

@@ -1,13 +1,16 @@
 #!/system/bin/sh
 # flutter-webui root channel launcher. Lives at <moddir>/flutter_webui/root.
-# Usage: sh root start    start the channel detached (returns at once)
-#        sh root serve    run the channel in the foreground
+# Usage: sh root start    find or start the channel; prints its session as one
+#                         JSON line (port, token), or exits non-zero
+#        sh root serve    run the channel (started detached by `start`)
+# Needs `ksud module config` (KernelSU or KernelSU Next v3.0.0+).
 # SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
 
 dir=${0%/*}
 case "$dir" in /*) ;; *) dir=$(cd "$dir" && pwd) ;; esac
 moddir=${dir%/*}
-run=$moddir/webroot/.run
+id=${moddir##*/}
+run=$dir/run
 
 case "$(uname -m)" in
   aarch64 | arm64) abi=arm64-v8a ;;
@@ -15,33 +18,34 @@ case "$(uname -m)" in
   *) echo "flutter_webui: unsupported CPU $(uname -m)" >&2; exit 1 ;;
 esac
 
+# Root shells can start with an empty environment, and the Dart VM needs a
+# writable TMPDIR: the module's temporary directory, which `start` empties on
+# the first start of each boot.
+export TMPDIR="${FLUTTER_WEBUI_DATA:-/data/adb/$id}/tmp"
+(umask 077 && mkdir -p "$TMPDIR" "$run")
+
+channel() {
+  rt=$dir/$abi
+  # A linux (glibc) runtime ships its loader and libraries next to it; an
+  # Android-built runtime runs directly.
+  for ld in "$rt"/ld-linux-*.so.*; do
+    [ -f "$ld" ] && exec "$ld" --library-path "$rt" "$rt/dartaotruntime" "$rt/flutter_webui_root.aot" "$@"
+  done
+  exec "$rt/dartaotruntime" "$rt/flutter_webui_root.aot" "$@"
+}
+
 case "$1" in
   start)
-    mkdir -p "$run"
-    # Not listable; root.log is root-only (the channel sets the rest). The
-    # umask applies to this subshell only, never to the channel's children.
-    chmod 711 "$run"
-    (umask 077 && : >>"$run/root.log")
-    chmod 600 "$run/root.log"
-    if command -v setsid >/dev/null 2>&1; then
-      setsid sh "$dir/root" serve </dev/null >>"$run/root.log" 2>&1 &
-    else
-      nohup sh "$dir/root" serve </dev/null >>"$run/root.log" 2>&1 &
-    fi
-    exit 0
+    channel start --module-dir "$moddir" --module-id "$id" --run-dir "$run" \
+      --temp-dir "$TMPDIR" --launcher "$dir/root"
     ;;
   serve)
-    rt=$dir/$abi
-    # Root shells can start with an empty environment, and the Dart VM needs
-    # a writable TMPDIR (outside webroot, which the manager serves).
-    export TMPDIR="$moddir/tmp"
-    (umask 077 && mkdir -p "$TMPDIR")
-    # A linux (glibc) runtime ships its loader and libraries next to it; an
-    # Android-built runtime runs directly.
-    for ld in "$rt"/ld-linux-*.so.*; do
-      [ -f "$ld" ] && exec "$ld" --library-path "$rt" "$rt/dartaotruntime" "$rt/flutter_webui_root.aot" serve --module-dir "$moddir"
-    done
-    exec "$rt/dartaotruntime" "$rt/flutter_webui_root.aot" serve --module-dir "$moddir"
+    # root.log is root-only; the umask applies to this subshell only, never
+    # to the channel's children.
+    (umask 077 && : >>"$run/root.log")
+    exec </dev/null 2>>"$run/root.log"
+    channel serve --module-dir "$moddir" --module-id "$id" --run-dir "$run" \
+      --temp-dir "$TMPDIR" --announce
     ;;
   *)
     echo "usage: sh $0 start|serve" >&2

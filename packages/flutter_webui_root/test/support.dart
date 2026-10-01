@@ -85,3 +85,17 @@ Future<void> waitGone(int pid) async {
 /// The permission bits of [path], as an octal string such as `644`.
 String modeOf(String path) =>
     (FileStat.statSync(path).mode & 0x1ff).toRadixString(8);
+
+/// tmp.config in memory, in place of `ksud module config`.
+class MemoryConfig implements ModuleConfig {
+  final Map<String, String> temp = {};
+
+  @override
+  Future<String?> get(String key) async => temp[key];
+
+  @override
+  Future<void> setTemp(String key, String value) async => temp[key] = value;
+
+  @override
+  Future<void> deleteTemp(String key) async => temp.remove(key);
+}

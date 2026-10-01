@@ -11,6 +11,7 @@
 
 import { execFile, execSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -26,7 +27,10 @@ const USAGE = `usage: node tool/fake_host/fake_host.mjs --webroot <dir> [options
   --events <list>       after the first frame, in order: pause, resume, back, tap[@x:y],
                         system-dark, system-light (prefers-color-scheme), wait<ms>
                         (e.g. tap,wait500,back,pause,wait2000,resume,back; tap is the viewport centre)
-  --exec-local          run ksu.exec commands with /bin/sh on this machine (default: run nothing, exit 0)
+  --exec-local          run ksu.exec commands with /bin/sh on this machine (default: run nothing, exit 0);
+                        ksud module config is tool/fake_host/ksud, keeping tmp.config under the
+                        system temp dir, and the module data dir (/data/adb/<id>) is a temp dir too;
+                        the module itself must be at /data/adb/modules/<id> (a symlink will do)
   --screenshot <png>    screenshot after the first frame and events
   --timeout <s>         seconds to wait for the first frame (default 60)
   --hold <s>            keep the page open this long at the end (default 1)
@@ -265,9 +269,17 @@ async function main() {
     if (firstFrame === null) out('flutter', `first frame at ${ms} ms`);
     firstFrame ??= ms;
   });
+  // As a module on KernelSU: ksud module config and /data/adb/<id>, here.
+  const scratch = o.execLocal ? fs.mkdtempSync(path.join(os.tmpdir(), 'fake-host-')) : null;
+  const execEnv = scratch && {
+    ...process.env,
+    FLUTTER_WEBUI_KSUD: path.join(path.dirname(new URL(import.meta.url).pathname), 'ksud'),
+    FAKE_KSUD_DIR: path.join(scratch, 'ksud'),
+    FLUTTER_WEBUI_DATA: path.join(scratch, 'data'),
+  };
   await page.exposeFunction('__fakeHostExec', (cmd) => {
     if (!o.execLocal) return [0, '', ''];
-    return new Promise((resolve) => execFile('/bin/sh', ['-c', cmd], { timeout: 30000 }, (err, stdout, stderr) => {
+    return new Promise((resolve) => execFile('/bin/sh', ['-c', cmd], { timeout: 30000, env: execEnv }, (err, stdout, stderr) => {
       const code = err ? (typeof err.code === 'number' ? err.code : 1) : 0;
       out('exec', `exit ${code}: ${cmd}`);
       resolve([code, stdout, stderr]);

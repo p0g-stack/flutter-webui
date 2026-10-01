@@ -8,7 +8,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import '../protocol.dart';
-import 'session_file.dart';
+import 'run_state.dart';
 
 /// Timings, overridable for tests.
 final class ChannelTimings {
@@ -50,7 +50,7 @@ final class ChannelLimits {
 final class RootChannelServer {
   RootChannelServer._(
     this._http,
-    this._session,
+    this._store,
     this._token,
     this.moduleDir,
     this.runDir,
@@ -59,31 +59,23 @@ final class RootChannelServer {
     this.log,
   );
 
-  /// Binds 127.0.0.1 on a free port and publishes `session.json` in
-  /// `<moduleDir>/webroot`.
+  /// Binds 127.0.0.1 on a free port and writes the session to [store].
+  ///
+  /// The launcher starts the channel while it holds `start.lock` in
+  /// [runDir], and replaces whatever session the store held.
   static Future<RootChannelServer> start({
     required Directory moduleDir,
+    required Directory runDir,
+    required SessionStore store,
     ChannelTimings timings = const ChannelTimings(),
     ChannelLimits limits = const ChannelLimits(),
     void Function(String) log = _noLog,
   }) async {
-    final webroot = Directory('${moduleDir.path}/webroot');
-    final runDir = Directory('${webroot.path}/.run');
     final procDir = Directory('${runDir.path}/proc');
-    await prepareRunDir(webroot);
+    await prepareRunDir(runDir);
     final boot = readBootId();
     _clearOtherBoots(procDir, boot, log);
     _pruneLogs(procDir);
-    // Whatever session.json says now is not this channel: drop it before
-    // binding, so a failed start leaves none behind.
-    final session = SessionFile(webroot);
-    final previous = session.read();
-    if (previous != null) {
-      final why =
-          staleReason(previous, boot: boot) ?? 'its channel holds no lock';
-      log('replacing session.json of pid ${previous.pid}: $why');
-    }
-    await session.clear();
     final token = _newToken();
     final http = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final info = SessionInfo(
@@ -97,7 +89,7 @@ final class RootChannelServer {
     );
     final server = RootChannelServer._(
       http,
-      session,
+      store,
       token,
       moduleDir.absolute,
       runDir,
@@ -106,7 +98,7 @@ final class RootChannelServer {
       log,
     );
     http.listen(server._handleRequest, onError: (Object e) => log('http: $e'));
-    await session.write(info);
+    await store.write(info);
     server.info = info;
     server._checkIdle();
     log('listening on 127.0.0.1:${http.port}');
@@ -114,7 +106,7 @@ final class RootChannelServer {
   }
 
   final HttpServer _http;
-  final SessionFile _session;
+  final SessionStore _store;
   final String _token;
   final Directory moduleDir;
   final Directory runDir;
@@ -138,7 +130,7 @@ final class RootChannelServer {
 
   int get port => _http.port;
 
-  /// Ends attached processes, removes `session.json` and stops listening.
+  /// Ends attached processes, withdraws the session and stops listening.
   /// Detached processes keep running.
   Future<void> shutdown() async {
     if (_closing) return done;
@@ -149,9 +141,20 @@ final class RootChannelServer {
     for (final c in _connections.toList()) {
       await c.socket.close(WebSocketStatus.goingAway);
     }
-    await _session.delete(ifPid: pid);
+    await _withdrawSession();
     await _http.close(force: true);
     if (!_done.isCompleted) _done.complete();
+  }
+
+  /// Removes the session from the store if it still names this channel. No
+  /// lock needed: the next channel writes its session only after this one
+  /// releases `lock`, which it does after this.
+  Future<void> _withdrawSession() async {
+    try {
+      await _store.delete(ifPid: pid);
+    } on Object catch (e) {
+      log('withdrawing the session: $e');
+    }
   }
 
   /// Never throws: an error here would end the channel, and any local app

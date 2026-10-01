@@ -11,12 +11,18 @@ import 'support.dart';
 
 void main() {
   late Directory moduleDir;
-  late Directory webroot;
+  late Directory runDir;
+  late MemoryConfig config;
   late RootChannelServer server;
+
+  Future<SessionInfo?> stored() => SessionStore(config).read();
+  Future<SessionInfo> session() async => (await stored())!;
 
   Future<RootChannelServer> startServer({ChannelTimings? timings}) =>
       RootChannelServer.start(
         moduleDir: moduleDir,
+        runDir: runDir,
+        store: SessionStore(config),
         timings:
             timings ??
             const ChannelTimings(
@@ -27,7 +33,8 @@ void main() {
 
   setUp(() async {
     moduleDir = await Directory.systemTemp.createTemp('module');
-    webroot = Directory('${moduleDir.path}/webroot');
+    runDir = Directory('${moduleDir.path}/flutter_webui/run');
+    config = MemoryConfig();
     server = await startServer();
   });
 
@@ -36,8 +43,8 @@ void main() {
     await moduleDir.delete(recursive: true);
   });
 
-  test('publishes session.json and greets', () async {
-    final info = SessionFile(webroot).read()!;
+  test('writes its session to tmp.config and greets', () async {
+    final info = await session();
     expect(info.port, server.port);
     expect(info.protocol, protocolVersion);
     expect(info.token, hasLength(43));
@@ -50,7 +57,7 @@ void main() {
   });
 
   test('rejects a wrong token and a foreign origin', () async {
-    final info = SessionFile(webroot).read()!;
+    final info = await session();
     final wrong = Uri.parse('ws://127.0.0.1:${info.port}/v1?token=nope');
     await expectLater(
       WebSocket.connect(wrong.toString()),
@@ -66,7 +73,7 @@ void main() {
   });
 
   test('runs a process with stdin, stdout, stderr and exit code', () async {
-    final client = await Client.connect(SessionFile(webroot).read()!);
+    final client = await Client.connect(await session());
     await client.next();
     final out = <int>[];
     final err = <int>[];
@@ -94,7 +101,7 @@ void main() {
   });
 
   test('close-stdin delivers EOF and env/cwd apply', () async {
-    final client = await Client.connect(SessionFile(webroot).read()!);
+    final client = await Client.connect(await session());
     await client.next();
     final out = <int>[];
     client.data.listen((f) => out.addAll(f.payload));
@@ -117,7 +124,7 @@ void main() {
   });
 
   test('signals and start errors', () async {
-    final client = await Client.connect(SessionFile(webroot).read()!);
+    final client = await Client.connect(await session());
     await client.next();
     client.send({
       'op': 'start',
@@ -147,7 +154,7 @@ void main() {
   });
 
   test('owner lost ends a piped process', () async {
-    final info = SessionFile(webroot).read()!;
+    final info = await session();
     final client = await Client.connect(info);
     await client.next();
     client.send({
@@ -161,7 +168,7 @@ void main() {
   });
 
   test('streams large output without loss', () async {
-    final client = await Client.connect(SessionFile(webroot).read()!);
+    final client = await Client.connect(await session());
     await client.next();
     var received = 0;
     client.data.listen((f) => received += f.payload.length);
@@ -178,7 +185,7 @@ void main() {
   test(
     'a detached process streams its log, reports exit, outlives its owner',
     () async {
-      final info = SessionFile(webroot).read()!;
+      final info = await session();
       final client = await Client.connect(info);
       await client.next();
       final out = StringBuffer();
@@ -215,7 +222,7 @@ void main() {
   );
 
   test('signal reaches a detached process group', () async {
-    final client = await Client.connect(SessionFile(webroot).read()!);
+    final client = await Client.connect(await session());
     await client.next();
     client.send({
       'op': 'start',
@@ -231,7 +238,7 @@ void main() {
   });
 
   test('read returns small files inside the module only', () async {
-    final client = await Client.connect(SessionFile(webroot).read()!);
+    final client = await Client.connect(await session());
     await client.next();
     File('${moduleDir.path}/place.json').writeAsStringSync('{"port":1}');
     client.send({
@@ -255,18 +262,18 @@ void main() {
     await client.close();
   });
 
-  test('exits when idle and removes session.json', () async {
+  test('exits when idle and withdraws its session', () async {
     await server.shutdown();
     server = await startServer(
       timings: const ChannelTimings(idleExit: Duration(milliseconds: 200)),
     );
-    expect(SessionFile(webroot).read(), isNotNull);
+    expect(await stored(), isNotNull);
     await server.done.timeout(const Duration(seconds: 5));
-    expect(SessionFile(webroot).read(), isNull);
+    expect(await stored(), isNull);
   });
 
   test('shutdown op ends piped processes', () async {
-    final client = await Client.connect(SessionFile(webroot).read()!);
+    final client = await Client.connect(await session());
     await client.next();
     client.send({
       'op': 'start',

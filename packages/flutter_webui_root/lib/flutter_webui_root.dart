@@ -6,5 +6,16 @@ library;
 
 export 'protocol.dart';
 export 'src/server.dart' show ChannelLimits, ChannelTimings, RootChannelServer;
-export 'src/session_file.dart'
-    show InstanceLock, RunModes, SessionFile, readBootId, setMode, staleReason;
+export 'src/launcher.dart'
+    show ChannelLauncher, ChannelSpawner, LauncherException;
+export 'src/run_state.dart'
+    show
+        InstanceLock,
+        KsudModuleConfig,
+        ModuleConfig,
+        RunModes,
+        SessionStore,
+        StartLock,
+        readBootId,
+        setMode,
+        staleReason;

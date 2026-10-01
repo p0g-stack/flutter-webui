@@ -1,0 +1,23 @@
+#!/bin/sh
+# A stand-in for KernelSU's `ksud module config` (temporary entries), for the
+# fake host and local runs of the root launcher: the launcher finds it through
+# FLUTTER_WEBUI_KSUD. Entries live in $FAKE_KSUD_DIR/<module id>/<key>.
+# SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+set -eu
+[ "${1:-} ${2:-}" = "module config" ] || { echo "fake ksud: only 'module config'" >&2; exit 2; }
+shift 2
+: "${KSU_MODULE:?This command must be run in the context of a module}"
+dir=${FAKE_KSUD_DIR:-${TMPDIR:-/tmp}/fake-ksud}/$KSU_MODULE
+mkdir -p "$dir"
+case "${1:-}" in
+  get) [ -f "$dir/$2" ] || { echo "Key '$2' not found" >&2; exit 1; }; cat "$dir/$2"; echo ;;
+  set)
+    shift; key=""; value=""; stdin=0
+    for a in "$@"; do
+      case "$a" in --temp | -t) ;; --stdin) stdin=1 ;; *) if [ -z "$key" ]; then key=$a; else value=$a; fi ;; esac
+    done
+    if [ "$stdin" = 1 ] || [ -z "$value" ]; then cat >"$dir/$key.tmp"; else printf %s "$value" >"$dir/$key.tmp"; fi
+    mv "$dir/$key.tmp" "$dir/$key" ;;
+  delete) shift; for a in "$@"; do case "$a" in -*) ;; *) rm -f "$dir/$a" ;; esac; done ;;
+  *) echo "fake ksud: unsupported '$*'" >&2; exit 2 ;;
+esac

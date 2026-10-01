@@ -27,8 +27,8 @@ app in a browser tab, and the staple plugins work (through `webui-packages`).
 - **Bootstrap** (`index.html`, loader) for the manager's fixed origin, plus
   Web-API shims backed by the root side where a WebView lacks an API.
 - **Root channel**: a small Dart executable started once through the bridge.
-  It serves one WebSocket on 127.0.0.1 (port and token in
-  `webroot/.run/session.json`), replacing the bridge's blocking `exec`, flaky
+  It serves one WebSocket on 127.0.0.1 (`root start` prints its port and
+  token; KernelSU's tmp.config keeps them), replacing the bridge's blocking `exec`, flaky
   `spawn`, quoting limits and polling. It offers a stable channel and process
   launch, nothing else; plugins and apps build on it.
 

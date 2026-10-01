@@ -12,7 +12,7 @@ owned by `bricks`, generic launcher rules in `squadron_process`
 Status: **v1**. Additive changes only (new optional fields, new ops); anything
 else bumps `protocol`.
 
-## Files in the module
+## Files
 
 ```
 <moddir>/flutter_webui/
@@ -20,77 +20,84 @@ else bumps `protocol`.
   <abi>/flutter_webui_root.aot   AOT snapshot of bin/flutter_webui_root.dart
   <abi>/dartaotruntime       Dart AOT runtime that runs on Android
   <abi>/ld-linux-*.so.*, lib*.so.*   only for a linux (glibc) runtime: its loader and libc
-<moddir>/tmp/                0700, the channel's TMPDIR (set by the launcher; root
-                             shells may start with an empty environment)
-<moddir>/webroot/.run/         0711: traversable, not listable
-  session.json               0644, written by the channel (below)
-  root.log                   0600, channel stderr, truncated on each start
-  lock                       0600, held while a channel runs
-  proc/                      0700
-  proc/<stamp>.log, .exit    0600, output and exit code of detached processes (16 newest kept)
-  proc/.boot                 boot id the files in proc/ are from
+  run/                       0700, root-only; gone with the module directory
+    start.lock               0600, held by one `root start` at a time
+    lock                     0600, held while a channel runs; holds its pid
+    root.log                 0600, channel stderr, truncated on each start
+    proc/                    0700
+    proc/<stamp>.log, .exit  0600, output and exit code of detached processes (16 newest kept)
+    proc/.boot               boot id the files in proc/ are from
+/data/adb/<id>/tmp/          0700, the module's TMPDIR (the channel's and what it
+                             starts; the launcher sets it, as root shells may
+                             start with an empty environment); emptied on the
+                             first start of each boot
 ```
 
-Modes are set explicitly (`chmod`), not left to the umask of whatever shell
-started the channel; the channel never changes its own umask, so processes it
-starts keep the one they inherit. `session.json` carries the token, so it is
-written to a temporary file whose mode is set before the token is written,
-then renamed into place.
+Nothing of the channel is in `webroot/`, which the manager serves. Modes are
+set explicitly (`chmod`), not left to the umask of whatever shell started the
+channel; the channel never changes its own umask, so processes it starts keep
+the one they inherit.
 
-Why `session.json` is 0644 and `.run/` 0711 rather than root-only: the page
-reads `session.json` through the manager's file server, not through root. The
-manager source reads (`docs/hosts.md`) say every host serves `webroot/` with
-root reads, and `/data/adb` is root-only, which would allow 0600 and 0700. That
-is not device-verified yet, so the file stays readable by the uid that serves
-it (an open devicelab item in `docs/hosts.md`); once verified, both tighten
-without a protocol change. Nothing else in `.run/` is meant for the manager.
+KernelSU module config (`ksud module config`, KernelSU and KernelSU Next
+v3.0.0+, required), in tmp.config, which ksud clears each boot (and on a
+late-load):
 
-On start (after taking `lock`) the channel replaces whatever `session.json`
-holds: a file naming a dead pid, another boot (`/proc/sys/kernel/random/boot_id`)
-or another version is stale, and with the lock held no other channel of this
-module is running. It removes `session.json.*.tmp` left by a killed channel,
-and if `proc/.boot` names another boot, every log and exit file in `proc/`
-(their processes cannot be running). On exit it removes `session.json` only if
-the file still names its own pid.
+| Key | Value | Written by |
+|---|---|---|
+| `webui.session` | the session (below) as one JSON value | the channel once it listens; on exit it removes the key if the key still names its pid |
+| `webui.boot` | the boot id (`/proc/sys/kernel/random/boot_id`) whose first start emptied `/data/adb/<id>/tmp` | the launcher |
+
+The install marker `webui.installed` (persist.config) is set by the module's
+`customize.sh` (flutter_p0g); the channel does not touch it. Every `ksud`
+call runs with `KSU_MODULE=<id>`, which a manager's `exec` does not set.
 
 `<abi>` is `arm64-v8a` or `x86_64`. `flutter_p0g` compiles the snapshot and
 ships the runtime: stock `dart compile exe` has no Android target. Either an
-Android-built `dartaotruntime` (being proven in devicelab), or the SDK's linux
-`dartaotruntime` with the glibc loader and libc/libm/libdl/libpthread next to
-it (runs on a Linux host with the system libraries hidden; not yet tried on a
-device). The launcher picks the loader when one is present.
+Android-built `dartaotruntime`, or the SDK's linux `dartaotruntime` with the
+glibc loader and libc/libm/libdl/libpthread next to it. The launcher picks
+the loader when one is present.
 
-## Discovery: `webroot/.run/session.json`
+## Start: `root start` prints the session
 
-Written by atomic rename once the socket listens. Every manager serves
-`webroot/` with root reads, so the page reads it with a plain
-`fetch('/.run/session.json?n=<nonce>', {cache: 'no-store'})`, without the bridge.
+The page runs this through the bridge, the only command it passes to it,
+each part quoted by `flutter_webui_client`:
 
-```json
-{
-  "protocol": 1,
-  "version": "0.1.0",
-  "port": 41234,
-  "token": "<43 chars, base64url, 256 random bits>",
-  "pid": 1234,
-  "boot": "<contents of /proc/sys/kernel/random/boot_id>",
-  "started": "2026-10-01T05:30:00.000Z"
-}
+```
+sh '<moddir>/flutter_webui/root' start
 ```
 
-Page start (`RootChannel.connect()` in `flutter_webui_client` does this):
-1. Fetch `session.json`. If present and `version` matches, connect.
-2. If it is missing, refused, rejected, or another `version`: start the channel
-   (after `shutdown` to a live channel of another version), then poll
-   `session.json` until a file with a new `pid` appears (50 ms steps, 5 s cap).
-3. The start command is the only string the page passes to the bridge, each
-   part quoted by `flutter_webui_client`:
-   `sh '<moddir>/flutter_webui/root' start`
-   It returns at once (so the blocking `ksu.exec` on KernelSU-family managers
-   costs only the fork). The channel runs in its own session with stdin from
-   `/dev/null`, so the manager closing its shell (WebUI X
-   `killShellWhenBackground`) does not end it. A second start while one runs
-   exits without effect (the `lock` file).
+It prints one line, the session of a live channel of this version, and exits
+0; or it writes a message on stderr and exits non-zero. Nothing else goes to
+stdout.
+
+```json
+{"protocol": 1, "version": "0.2.0", "port": 41234,
+ "token": "<43 chars, base64url, 256 random bits>", "pid": 1234,
+ "boot": "<boot_id>", "started": "2026-10-01T05:30:00.000Z"}
+```
+
+Under `run/start.lock`, `root start`:
+1. **Boot marker.** If `webui.boot` is not this boot, empties
+   `/data/adb/<id>/tmp` and sets it.
+2. **Live session.** If `webui.session` is from this boot and its pid runs,
+   connects with its token and reads the hello. Same version: prints the
+   session. Another version: sends `shutdown`.
+3. **New channel.** Otherwise ends a channel that holds `run/lock` without a
+   usable session (`SIGTERM` to the pid in `lock`, if its command line is the
+   channel's), then starts `root serve` detached: its own session, stdin from
+   `/dev/null`, stderr to `run/root.log`, so neither the launcher exiting nor
+   the manager closing its shell (WebUI X `killShellWhenBackground`) ends it.
+   The channel takes `run/lock` (waiting up to 10 s for one that is shutting
+   down), listens, writes `webui.session`, and prints the session on stdout;
+   the launcher passes it on (15 s cap).
+
+On KernelSU-family managers `exec` blocks the page thread while the command
+runs: tens of milliseconds for a live channel, a few hundred for a first
+start. Nothing else is needed to find the channel: no file is fetched.
+
+Page start (`RootChannel.connect()` in `flutter_webui_client`): run
+`root start`, connect to the session it printed, and run it once more if that
+channel refused the connection (it was exiting while idle).
 
 ## Connection
 
@@ -106,7 +113,7 @@ Page start (`RootChannel.connect()` in `flutter_webui_client` does this):
   while page timers are paused, so a hidden page stays connected.
 - Several connections may be open; each owns the processes it starts.
 - With no connection and no attached process for 30 s, the channel removes
-  `session.json` and exits.
+  its session and exits.
 
 ## Frames
 
@@ -121,7 +128,7 @@ bytes 5..   payload (at least 1 byte)
 On connect the server sends:
 
 ```json
-{"op": "hello", "protocol": 1, "version": "0.1.0", "pid": 1234, "boot": "...", "uid": 0, "moduleDir": "/data/adb/modules/<id>"}
+{"op": "hello", "protocol": 1, "version": "0.2.0", "pid": 1234, "boot": "...", "uid": 0, "moduleDir": "/data/adb/modules/<id>"}
 ```
 
 ### Requests (page -> server)
@@ -152,7 +159,7 @@ error has no other effect, and the connection stays open.
 | `close-stdin` | `id` | none |
 | `signal` | `id`, `signal`: `TERM` `KILL` `INT` `HUP` `USR1` `USR2` `STOP` `CONT` | none |
 | `read` | `path`: absolute; must resolve (symlinks too) to a regular file inside the module directory; at most 64 KiB of UTF-8 | `{"op":"read","id":n,"data":"..."}` |
-| `shutdown` | | ends attached processes, removes `session.json`, exits |
+| `shutdown` | | ends attached processes, removes its session, exits |
 
 Stdin bytes go as binary frames with stream 0 and the process id.
 
@@ -174,7 +181,7 @@ the channel, such as an app's root process:
   wrapper shell that records its exit code. The channel does not reap it and
   never ends it; the process's own rules do (squadron_process: a grace window
   after its last page link closes).
-- stdout and stderr go together to `.run/proc/<stamp>.log`; the channel
+- stdout and stderr go together to `run/proc/<stamp>.log`; the channel
   streams that log to the owner as stream 1 while the owner is connected.
 - `exit` reports the code the wrapper recorded (`128 + n` for signal `n`).
 - `signal` goes to the process group, so it reaches the process; the wrapper
@@ -188,12 +195,12 @@ the channel, such as an app's root process:
 ```
 -> {"op":"start","id":1,"detached":true,
     "argv":["/data/adb/modules/demo/flutter_webui/x86_64/dartaotruntime","/data/adb/modules/demo/bin/demo.aot",
-            "serve","--session-file","/data/adb/modules/demo/webroot/.run/demo.place.json"],
+            "serve","--session-file","/data/adb/modules/demo/run/demo.place.json"],
     "env":{"SQUADRON_PROCESS_TOKEN":"..."}}
 <- {"op":"started","id":1,"pid":4242}
 <- [1][0 0 0 1] {"squadron_process":1,"port":40111,"token":"...","pid":4243}\n
    ... page reloads, connects again ...
--> {"op":"read","id":1,"path":"/data/adb/modules/demo/webroot/.run/demo.place.json"}
+-> {"op":"read","id":1,"path":"/data/adb/modules/demo/run/demo.place.json"}
 <- {"op":"read","id":1,"data":"{\"squadron_process\":1,\"port\":40111,...}"}
 ```
 
@@ -206,7 +213,7 @@ directly; the `flutter_webui` web plugin is only for the engine handlers.
 import 'package:flutter_webui_client/flutter_webui_client.dart';
 
 WebUi.host;             // WebUiHost: kind, moduleId, moduleDir, ksuMethods
-final channel = await WebUi.connectRootChannel();  // discovery + start as above
+final channel = await WebUi.connectRootChannel();  // root start, as above
 final p = await channel.start(['/system/bin/id']); // RootProcess
 p.stdout; p.stderr;     // Stream<List<int>>
 p.stdin;                // StreamSink<List<int>>; close() sends close-stdin

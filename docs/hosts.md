@@ -84,7 +84,8 @@ KernelSU 3.3.0, Android 15 x86_64 emulator, WebView 124.0.6367.219
 - Home: `visibilitychange` to hidden, return: visible; no `focus`/`blur`.
   While hidden, timers throttle to about one tick a second and fetches
   complete. Back at the root route closes the WebUI.
-- Root channel: `ksu.exec` of `root start` returns in 206 ms, `session.json`
+- Root channel (then found through `webroot/.run/session.json`; `root start`
+  now prints the session instead): `ksu.exec` of `root start` returns in 206 ms, `session.json`
   is served 62 ms later, the WebSocket hello reports uid 0. The channel runs
   as `u:r:ksu:s0` through the glibc loader. Page `fetch` and WebSocket to
   127.0.0.1 work on this WebView (older than Local Network Access).
@@ -137,15 +138,8 @@ with KernelSU 3.3.0 and WebUI X v438 unchanged (run 36867884161).
   in Chromium 141), but Chromium 141 gates a public page's requests to
   loopback behind the Local Network Access permission (docs/dev.md); whether
   a manager's WebView enforces it, and for the root channel's WebSocket too.
-- Whether WebUI X serves `/.run/session.json` from webroot (it maps
-  `/.<modId>/` to the module directory; a module id `run` would collide).
 - `WX_ON_INSETS` units; `textZoom` effect; clipboard `writeText` and long-press
   paste per host; offline emoji with the bundled fonts.
-- Who reads `webroot/` when the manager serves it: root (a root shell or
-  libsu `SuFile`, as the source reads say) or the manager's own uid. If every
-  host reads as root, `webroot/.run/session.json` can go from 0644 to 0600
-  and `.run/` from 0711 to 0700 (`RunModes` in `flutter_webui_root`); check a
-  page still finds the channel on each host after the change.
 - An Android-built `dartaotruntime` (the linux one through its bundled loader
   works, above).
 - Full per-topic checks: `docs/parity.md`.

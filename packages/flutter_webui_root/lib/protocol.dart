@@ -13,7 +13,7 @@ import 'dart:typed_data';
 const int protocolVersion = 1;
 
 /// Version of the channel executable, compared by the page on connect.
-const String channelVersion = '0.1.0';
+const String channelVersion = '0.2.0';
 
 /// The WebSocket path, relative to `ws://127.0.0.1:<port>`.
 const String channelPath = '/v1';
@@ -21,8 +21,14 @@ const String channelPath = '/v1';
 /// The only page origin every manager serves module WebUIs from.
 const String managerOrigin = 'https://mui.kernelsu.org';
 
-/// Session file, relative to the module's `webroot/`.
-const String sessionFilePath = '.run/session.json';
+/// The tmp.config key (`ksud module config`) that holds the running
+/// channel's [SessionInfo] as JSON. Read and written by the launcher and the
+/// channel only; the page gets the session from the launcher's output.
+const String sessionConfigKey = 'webui.session';
+
+/// The tmp.config key that holds the boot id of the boot in which the
+/// launcher last cleared the module's temporary directory.
+const String bootConfigKey = 'webui.boot';
 
 /// Largest file the `read` op returns.
 const int maxReadBytes = 64 * 1024;
@@ -98,7 +104,8 @@ final class DataFrame {
   }
 }
 
-/// The contents of `webroot/.run/session.json`.
+/// Where to reach the running channel: the one line `root start` prints,
+/// also kept in tmp.config ([sessionConfigKey]).
 final class SessionInfo {
   const SessionInfo({
     required this.protocol,
@@ -136,7 +143,7 @@ final class SessionInfo {
     'started': started.toUtc().toIso8601String(),
   };
 
-  /// Parses a decoded `session.json`, or returns null if a field is missing.
+  /// Parses a decoded session, or returns null if a field is missing.
   static SessionInfo? fromJson(Object? json) {
     if (json is! Map) return null;
     final protocol = json['protocol'];

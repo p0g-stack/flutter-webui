@@ -7,24 +7,12 @@ import 'dart:typed_data';
 
 import 'root_channel.dart';
 
-/// [ChannelTransport] over `dart:io`, for tests and host-side tools: reads
-/// `session.json` from disk.
+/// [ChannelTransport] over `dart:io`, for tests and host-side tools.
 final class IoChannelTransport implements ChannelTransport {
-  IoChannelTransport(this.sessionFile, {this.origin});
-
-  final File sessionFile;
+  IoChannelTransport({this.origin});
 
   /// Sent as the `Origin` header, as a page would.
   final String? origin;
-
-  @override
-  Future<String?> readSession() async {
-    try {
-      return await sessionFile.readAsString();
-    } on FileSystemException {
-      return null;
-    }
-  }
 
   @override
   Future<ChannelSocket> connect(Uri uri) async {

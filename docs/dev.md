@@ -172,7 +172,7 @@ a machine that has one, nothing needs installing; point
 | `--insets T,B` or `T,R,B,L` | safe-area insets in px (default: the profile's) |
 | `--manager-colors <hex>` | serve `/internal/colors.css` with this `--background` (the manager's Monet theme); without it, a missing file |
 | `--events` | after the first frame, in order: `pause`, `resume`, `back`, `tap[@x:y]` (a click, the viewport centre by default), `system-dark`, `system-light` (`prefers-color-scheme`), `wait<ms>` |
-| `--exec-local` | run `ksu.exec` commands with `/bin/sh` here; off by default (exec answers `0, '', ''`) |
+| `--exec-local` | run `ksu.exec` commands with `/bin/sh` here; off by default (exec answers `0, '', ''`). `ksud module config` is `tool/fake_host/ksud` (through `FLUTTER_WEBUI_KSUD`) and `/data/adb/<id>` a temp dir (`FLUTTER_WEBUI_DATA`), both fresh per run; the module itself must be at `/data/adb/modules/<id>` (a symlink will do) |
 | `--csp <policy>` | send a Content-Security-Policy with HTML pages |
 | `--screenshot <png>`, `--timeout <s>`, `--hold <s>`, `--viewport WxH` | |
 
