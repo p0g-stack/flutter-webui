@@ -5,7 +5,9 @@ environment:
   sdk: ^3.13.0
 
 workspace:
+  - packages/flutter_webui
   - packages/flutter_webui_root
+  - web_ui
 
 dev_dependencies:
   lints: ^6.0.0

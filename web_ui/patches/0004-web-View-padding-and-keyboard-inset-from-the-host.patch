@@ -1,0 +1,126 @@
+From 4d06032b9800f2fc071454e9bc0000a67de2ea46 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 1 Oct 2026 05:35:35 +0000
+Subject: [PATCH 4/5] [web] View padding and keyboard inset from the host
+
+viewPadding comes from the host's safe-area insets (logical pixels times
+devicePixelRatio); padding is viewPadding less viewInsets, as on mobile
+embedders. A host-reported keyboard height replaces the visual-viewport
+measurement.
+---
+ .../lib/web_ui/lib/src/engine/window.dart     | 52 ++++++++++++++++---
+ 1 file changed, 46 insertions(+), 6 deletions(-)
+
+diff --git a/engine/src/flutter/lib/web_ui/lib/src/engine/window.dart b/engine/src/flutter/lib/web_ui/lib/src/engine/window.dart
+index 6a7c610bd62..7ba88f8e2a7 100644
+--- a/engine/src/flutter/lib/web_ui/lib/src/engine/window.dart
++++ b/engine/src/flutter/lib/web_ui/lib/src/engine/window.dart
+@@ -13,6 +13,7 @@ import '../engine.dart' show DimensionsProvider, registerHotRestartListener, ren
+ import 'browser_detection.dart';
+ import 'display.dart';
+ import 'dom.dart';
++import 'host_embedding.dart';
+ import 'initialization.dart';
+ import 'js_interop/js_app.dart';
+ import 'mouse/context_menu.dart';
+@@ -70,6 +71,9 @@ class EngineFlutterView implements ui.FlutterView {
+     embeddingStrategy.attachViewRoot(dom.rootElement);
+     pointerBinding = PointerBinding(this);
+     _resizeSubscription = onResize.listen(_handleBrowserResize);
++    _hostMetricsSubscription = HostEmbedding.instance.onMetricsChanged.listen(
++      (_) => _handleHostMetrics(),
++    );
+     _globalHtmlAttributes.applyAttributes(
+       viewId: viewId,
+       rendererTag: renderer.rendererTag,
+@@ -93,6 +97,7 @@ class EngineFlutterView implements ui.FlutterView {
+   final EmbeddingStrategy embeddingStrategy;
+ 
+   late final StreamSubscription<ui.Size?> _resizeSubscription;
++  late final StreamSubscription<void> _hostMetricsSubscription;
+ 
+   final ViewConfiguration _viewConfiguration = const ViewConfiguration();
+ 
+@@ -108,6 +113,7 @@ class EngineFlutterView implements ui.FlutterView {
+     }
+     isDisposed = true;
+     _resizeSubscription.cancel();
++    _hostMetricsSubscription.cancel();
+     dimensionsProvider.close();
+     pointerBinding.dispose();
+     dom.rootElement.remove();
+@@ -261,13 +267,40 @@ class EngineFlutterView implements ui.FlutterView {
+   ViewPadding _viewInsets = ui.ViewPadding.zero as ViewPadding;
+ 
+   @override
+-  ViewPadding get viewPadding => _viewConfiguration.viewPadding;
++  ViewPadding get viewPadding {
++    final ui_web.HostInsets? host = HostEmbedding.instance.viewPadding;
++    if (host == null) {
++      return _viewConfiguration.viewPadding;
++    }
++    final double dpr = devicePixelRatio;
++    return ViewPadding(
++      left: host.left * dpr,
++      top: host.top * dpr,
++      right: host.right * dpr,
++      bottom: host.bottom * dpr,
++    );
++  }
+ 
+   @override
+   ViewPadding get systemGestureInsets => _viewConfiguration.systemGestureInsets;
+ 
++  /// [viewPadding] less what [viewInsets] already covers, as on mobile
++  /// embedders.
+   @override
+-  ViewPadding get padding => _viewConfiguration.padding;
++  ViewPadding get padding {
++    if (HostEmbedding.instance.viewPadding == null) {
++      return _viewConfiguration.padding;
++    }
++    final ViewPadding view = viewPadding;
++    final ViewPadding insets = viewInsets;
++    double less(double a, double b) => a - b > 0 ? a - b : 0;
++    return ViewPadding(
++      left: less(view.left, insets.left),
++      top: less(view.top, insets.top),
++      right: less(view.right, insets.right),
++      bottom: less(view.bottom, insets.bottom),
++    );
++  }
+ 
+   @override
+   ui.GestureSettings get gestureSettings => _viewConfiguration.gestureSettings;
+@@ -325,6 +358,13 @@ class EngineFlutterView implements ui.FlutterView {
+     platformDispatcher.invokeOnMetricsChanged();
+   }
+ 
++  /// The host changed its padding or keyboard inset.
++  void _handleHostMetrics() {
++    _physicalSize ??= _computePhysicalSize();
++    _computeOnScreenKeyboardInsets(_shouldPreservePhysicalSizeOnResize);
++    platformDispatcher.invokeOnMetricsChanged();
++  }
++
+   /// Uses the previous physical size and current innerHeight/innerWidth
+   /// values to decide if a device is rotating.
+   ///
+@@ -361,10 +401,10 @@ class EngineFlutterView implements ui.FlutterView {
+   }
+ 
+   void _computeOnScreenKeyboardInsets(bool isEditingOnMobile) {
+-    _viewInsets = dimensionsProvider.computeKeyboardInsets(
+-      _physicalSize!.height,
+-      isEditingOnMobile,
+-    );
++    final double? hostKeyboard = HostEmbedding.instance.keyboardInset;
++    _viewInsets = hostKeyboard != null
++        ? ViewPadding(left: 0, top: 0, right: 0, bottom: hostKeyboard * devicePixelRatio)
++        : dimensionsProvider.computeKeyboardInsets(_physicalSize!.height, isEditingOnMobile);
+ 
+     // Ensure that viewInsets are never negative. If it's not caught here, it will be caught later
+     // in the framework, and will be hard to debug since the root cause is here.
+-- 
+2.43.0
+

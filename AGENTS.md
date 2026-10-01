@@ -18,3 +18,9 @@ Self-contained; no external base file.
   `killShellWhenBackground: false`; never rely on page timers while hidden.
 - Host claims and numbers (freeze times, latency) come from devicelab runs,
   with the device and manager named. Tests are unit tests against fakes.
+- `web_ui/patches` is a `git format-patch` series against the Flutter release
+  tag in `web_ui/VERSION`. Edit it as commits on that tag, never by hand, and
+  rebuild with `web_ui/tool/build_web_sdk.dart` to check it compiles.
+- Never pause a `dart:io` process stdout/stderr subscription in the root
+  channel: on Dart 3.13.4 a resumed pipe can miss its wake-up and stall the
+  child for good.

@@ -26,7 +26,13 @@ case "$1" in
     exit 0
     ;;
   serve)
-    exec "$dir/$abi/dartaotruntime" "$dir/$abi/flutter_webui_root.aot" serve --module-dir "$moddir"
+    rt=$dir/$abi
+    # A linux (glibc) runtime ships its loader and libraries next to it; an
+    # Android-built runtime runs directly.
+    for ld in "$rt"/ld-linux-*.so.*; do
+      [ -f "$ld" ] && exec "$ld" --library-path "$rt" "$rt/dartaotruntime" "$rt/flutter_webui_root.aot" serve --module-dir "$moddir"
+    done
+    exec "$rt/dartaotruntime" "$rt/flutter_webui_root.aot" serve --module-dir "$moddir"
     ;;
   *)
     echo "usage: sh $0 start|serve" >&2

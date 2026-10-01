@@ -1,0 +1,67 @@
+From f6d87423513cf71223aa02f8b97c5373a5648968 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 1 Oct 2026 05:35:35 +0000
+Subject: [PATCH 2/5] [web] Lifecycle: honour the host's reported state
+
+When the embedding host reports a lifecycle state (paused while the page
+stays visible), it overrides visibility and focus until cleared. Detached
+still wins.
+---
+ .../app_lifecycle_state.dart                  | 22 +++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/engine/src/flutter/lib/web_ui/lib/src/engine/platform_dispatcher/app_lifecycle_state.dart b/engine/src/flutter/lib/web_ui/lib/src/engine/platform_dispatcher/app_lifecycle_state.dart
+index da5808c2f78..0c59512afe4 100644
+--- a/engine/src/flutter/lib/web_ui/lib/src/engine/platform_dispatcher/app_lifecycle_state.dart
++++ b/engine/src/flutter/lib/web_ui/lib/src/engine/platform_dispatcher/app_lifecycle_state.dart
+@@ -21,11 +21,21 @@ abstract class AppLifecycleState {
+   ui.AppLifecycleState get appLifecycleState => _appLifecycleState;
+   ui.AppLifecycleState _appLifecycleState = ui.AppLifecycleState.resumed;
+ 
++  /// The state the browser reports, before [HostEmbedding.appLifecycleState]
++  /// overrides it.
++  ui.AppLifecycleState _browserState = ui.AppLifecycleState.resumed;
++
++  StreamSubscription<void>? _hostSubscription;
++
+   final List<AppLifecycleStateListener> _listeners = <AppLifecycleStateListener>[];
+ 
+   void addListener(AppLifecycleStateListener listener) {
+     if (_listeners.isEmpty) {
+       activate();
++      _hostSubscription = HostEmbedding.instance.onAppLifecycleStateChanged.listen(
++        (_) => _publish(),
++      );
++      _publish();
+     }
+     _listeners.add(listener);
+     listener(_appLifecycleState);
+@@ -35,6 +45,8 @@ abstract class AppLifecycleState {
+     _listeners.remove(listener);
+     if (_listeners.isEmpty) {
+       deactivate();
++      _hostSubscription?.cancel();
++      _hostSubscription = null;
+     }
+   }
+ 
+@@ -46,6 +58,16 @@ abstract class AppLifecycleState {
+ 
+   @visibleForTesting
+   void onAppLifecycleStateChange(ui.AppLifecycleState newState) {
++    _browserState = newState;
++    _publish();
++  }
++
++  /// Reports the host's state where it has one, unless the views are gone.
++  void _publish() {
++    final ui.AppLifecycleState? host = HostEmbedding.instance.appLifecycleState;
++    final ui.AppLifecycleState newState = host == null || _browserState == ui.AppLifecycleState.detached
++        ? _browserState
++        : host;
+     if (newState != _appLifecycleState) {
+       _appLifecycleState = newState;
+       for (final AppLifecycleStateListener listener in _listeners) {
+-- 
+2.43.0
+

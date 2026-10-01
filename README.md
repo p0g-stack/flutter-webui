@@ -41,16 +41,36 @@ Out: plugins (`webui-packages`), the build/packaging tool (`flutter_p0g`,
 which also adds the `webui/` platform folder to an app), app code, work that
 must outlive the page (the app's own root process).
 
-## Nest (proposed)
+## Layout
 
 ```
-packages/flutter_webui/      host detection, channel handlers, root-channel client, tests vs fakes
-packages/flutter_webui_root/ the root channel executable (dart compile exe)
-web_ui/                      VERSION (Flutter pin) + patches/
-bootstrap/                   index.html, loader, shims/
-fakes/                       fake host objects + devicelab recordings they replay
-docs/hosts.md                host behaviour per manager, written once
+packages/flutter_webui/       web plugin: host detection, handlers on the patched web_ui hooks,
+                              root-channel client (WebUi.connectRootChannel), tests vs fakes
+packages/flutter_webui_root/  the root channel (Dart, AOT snapshot) and its launcher (module/root)
+web_ui/                       VERSION (Flutter pin), patches/, tool/build_web_sdk.dart
+bootstrap/                    index.html, flutter_bootstrap.js, flutter_webui.js/.css, dev.html
+docs/                         hosts.md (behaviour per manager), root-channel.md (contract v1)
 ```
+
+## Using it
+
+An app needs three things, which `flutter_p0g` provides (`create .` adds the
+`webui/` platform folder, `precache` the SDK, `build webui` the module):
+
+1. **The patched web SDK.** `dart run web_ui/tool/build_web_sdk.dart --flutter
+   <flutter 3.47.5> --out <dir>` applies `web_ui/patches` to the release's
+   `web_ui` sources and rebuilds the platform kernels and DDC modules with the
+   Dart SDK's own tools (about 20 s, no engine build). Overlay `<dir>` on
+   `<flutter>/bin/cache`.
+2. **`flutter_webui` as a dependency.** Its web plugin registrant installs the
+   handlers before `main()`; app code stays stock.
+3. **The bootstrap** laid over `web/`, built with
+   `flutter build web --release --no-web-resources-cdn --pwa-strategy=none`.
+
+The patches add `dart:ui_web` hooks (`setHostViewPadding`,
+`setHostAppLifecycleState`, `setHostPlatformBrightness`, `setHostExitHandler`,
+`setHostClipboard`, `setHostKeyboardInset`) that keep today's behaviour unless
+an embedding sets them, so they are upstreamable as is.
 
 ## License
 

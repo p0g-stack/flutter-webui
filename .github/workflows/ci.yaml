@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+      - run: flutter precache --web
+      - run: flutter pub get
+      - name: Root channel tests
+        run: dart test
+        working-directory: packages/flutter_webui_root
+      - name: Patches apply and compile (patched web SDK)
+        run: dart run web_ui/tool/build_web_sdk.dart --flutter "$FLUTTER_ROOT" --out "$RUNNER_TEMP/patched"
+      - name: Use the patched web SDK
+        run: |
+          cache="$FLUTTER_ROOT/bin/cache"
+          rm -rf "$cache/flutter_web_sdk" "$cache/pkg/sky_engine/lib/ui_web"
+          cp -R "$RUNNER_TEMP/patched/flutter_web_sdk" "$cache/"
+          cp -R "$RUNNER_TEMP/patched/pkg/sky_engine/lib/ui_web" "$cache/pkg/sky_engine/lib/"
+      - run: dart analyze --fatal-infos
+      - name: flutter_webui tests
+        run: flutter test
+        working-directory: packages/flutter_webui
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flutter-webui-web-sdk-3.47.5
+          path: ${{ runner.temp }}/patched

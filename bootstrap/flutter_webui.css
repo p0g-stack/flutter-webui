@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception */
+html, body { margin: 0; height: 100%; }
+body { background: #fff; }
+@media (prefers-color-scheme: dark) { body { background: #121212; } }
+#flutter-webui-splash {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+}
+#flutter-webui-splash::after {
+  content: ""; width: 32px; height: 32px; border-radius: 50%;
+  border: 3px solid rgba(128, 128, 128, .3); border-top-color: rgba(128, 128, 128, .9);
+  animation: flutter-webui-spin 0.8s linear infinite;
+}
+@keyframes flutter-webui-spin { to { transform: rotate(360deg); } }
+#flutter-webui-error {
+  position: fixed; inset: 0; padding: 24px; font: 15px/1.5 sans-serif; color: #888;
+  white-space: pre-wrap;
+}

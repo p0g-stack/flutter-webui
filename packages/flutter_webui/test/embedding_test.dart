@@ -1,0 +1,96 @@
+// Copyright 2026 The p0g-stack authors.
+// SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_webui/flutter_webui.dart';
+
+import 'fake_host.dart';
+
+(FakeBridge, FakeHooks, WebUiEmbedding) install(FakeBridge bridge) {
+  final hooks = FakeHooks();
+  final embedding = WebUiEmbedding(
+    WebUiHost.detect(bridge),
+    bridge,
+    hooks,
+    clipboard: FakeClipboard(),
+  )..install();
+  return (bridge, hooks, embedding);
+}
+
+void main() {
+  test('a browser tab gets nothing', () {
+    final (bridge, hooks, _) = install(FakeBridge.browser());
+    expect(hooks.log, isEmpty);
+    expect(hooks.exitHandler, isNull);
+    expect(hooks.clipboard, isNull);
+    expect(bridge.calls, isEmpty);
+  });
+
+  test(
+    'KernelSU: edge-to-edge, CSS insets and their changes, ksu.exit',
+    () async {
+      final (bridge, hooks, _) = install(FakeBridge.kernelsu());
+      expect(bridge.calls, ['ksu.enableEdgeToEdge(true)']);
+      expect(hooks.padding, const Insets(top: 24, bottom: 48));
+      bridge.insets = const Insets(top: 24, bottom: 0, left: 10);
+      bridge.insetsController.add(null);
+      expect(hooks.padding, const Insets(top: 24, left: 10));
+      await hooks.exitHandler!();
+      expect(bridge.calls.last, 'ksu.exit()');
+      expect(hooks.clipboard, isNotNull);
+      expect(hooks.lifecycle, isNull);
+    },
+  );
+
+  test('Next: enableInsets; exit leaves Back to the host', () async {
+    final (bridge, hooks, _) = install(FakeBridge.next());
+    expect(bridge.calls, ['ksu.enableInsets(true)']);
+    await hooks.exitHandler!();
+    expect(bridge.calls, ['ksu.enableInsets(true)']);
+  });
+
+  test('no CSS insets leaves the engine padding alone', () {
+    final (_, hooks, _) = install(FakeBridge.apatch());
+    expect(hooks.padding, isNull);
+  });
+
+  test('WebUI X: pause/resume map to hidden and back, as a hidden tab', () {
+    final (bridge, hooks, _) = install(FakeBridge.webuix());
+    expect(hooks.brightness, HostBrightness.dark);
+    bridge.eventController.add(const HostEvent('WX_ON_PAUSE'));
+    expect(hooks.lifecycle, HostLifecycle.hidden);
+    bridge.darkMode = false;
+    bridge.eventController.add(const HostEvent('WX_ON_RESUME'));
+    expect(hooks.log.sublist(hooks.log.length - 2), [
+      'lifecycle null',
+      'brightness HostBrightness.light',
+    ]);
+  });
+
+  test('WebUI X: Back walks history; insets events; webui.exit', () async {
+    final (bridge, hooks, _) = install(FakeBridge.webuix());
+    expect(hooks.padding, const Insets(top: 30, bottom: 20));
+    bridge.eventController.add(const HostEvent('WX_ON_BACK'));
+    expect(bridge.backs, 1);
+    bridge.eventController.add(
+      const HostEvent('WX_ON_INSETS', {
+        'top': 12,
+        'bottom': 34,
+        'left': 0,
+        'right': 0,
+      }),
+    );
+    expect(hooks.padding, const Insets(top: 12, bottom: 34));
+    bridge.eventController.add(const HostEvent('WX_ON_INSETS', 'garbage'));
+    expect(hooks.padding, const Insets(top: 12, bottom: 34));
+    await hooks.exitHandler!();
+    expect(bridge.calls.last, 'webui.exit()');
+  });
+
+  test('dispose stops listening', () {
+    final (bridge, hooks, embedding) = install(FakeBridge.webuix());
+    embedding.dispose();
+    bridge.eventController.add(const HostEvent('WX_ON_PAUSE'));
+    expect(hooks.lifecycle, isNull);
+  });
+}

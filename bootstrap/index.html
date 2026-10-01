@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<!-- flutter-webui bootstrap: replaces the app's web/index.html in WebUI builds.
+     SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception -->
+<html>
+<head>
+  <!-- Every manager serves webroot at the root of https://mui.kernelsu.org/. -->
+  <base href="/">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Filled by the build with the module id, for hosts without ksu.moduleInfo(). -->
+  <meta name="webui-module-id" content="">
+  <title>Flutter</title>
+  <!-- KernelSU-family hosts: requesting this turns edge-to-edge on and defines
+       --safe-area-inset-*; flutter_webui reads them. Elsewhere a harmless miss. -->
+  <link id="flutter-webui-insets" rel="stylesheet" href="/internal/insets.css">
+  <link rel="stylesheet" href="flutter_webui.css">
+</head>
+<body>
+  <div id="flutter-webui-splash" aria-hidden="true"></div>
+  <script src="flutter_webui.js"></script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

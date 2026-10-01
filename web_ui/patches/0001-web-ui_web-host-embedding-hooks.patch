@@ -1,0 +1,222 @@
+From d9722bcd5709ad7f787008d2d8a78c1be21d10f7 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 1 Oct 2026 05:35:35 +0000
+Subject: [PATCH 1/5] [web] ui_web: host embedding hooks
+
+A page embedded in an app's WebView (for example a root manager's module
+WebUI) cannot learn some platform state from the browser: safe-area
+padding, the host's pause/resume, its dark mode, how to close. These hooks
+let the embedding supply them. Every value is null in a browser tab, and
+null keeps today's behaviour.
+---
+ .../flutter/lib/web_ui/lib/src/engine.dart    |  1 +
+ .../web_ui/lib/src/engine/host_embedding.dart | 86 +++++++++++++++++++
+ .../lib/web_ui/lib/ui_web/src/ui_web.dart     |  1 +
+ .../lib/ui_web/src/ui_web/host_embedding.dart | 78 +++++++++++++++++
+ 4 files changed, 166 insertions(+)
+ create mode 100644 engine/src/flutter/lib/web_ui/lib/src/engine/host_embedding.dart
+ create mode 100644 engine/src/flutter/lib/web_ui/lib/ui_web/src/ui_web/host_embedding.dart
+
+diff --git a/engine/src/flutter/lib/web_ui/lib/src/engine.dart b/engine/src/flutter/lib/web_ui/lib/src/engine.dart
+index 54823c096c9..14f3f955d97 100644
+--- a/engine/src/flutter/lib/web_ui/lib/src/engine.dart
++++ b/engine/src/flutter/lib/web_ui/lib/src/engine.dart
+@@ -63,6 +63,7 @@ export 'engine/font_fallbacks.dart';
+ export 'engine/fonts.dart';
+ export 'engine/frame_service.dart';
+ export 'engine/frame_timing_recorder.dart';
++export 'engine/host_embedding.dart';
+ export 'engine/html_image_element_codec.dart';
+ export 'engine/image_decoder.dart';
+ export 'engine/image_decoding_manager.dart';
+diff --git a/engine/src/flutter/lib/web_ui/lib/src/engine/host_embedding.dart b/engine/src/flutter/lib/web_ui/lib/src/engine/host_embedding.dart
+new file mode 100644
+index 00000000000..ce0e113abc7
+--- /dev/null
++++ b/engine/src/flutter/lib/web_ui/lib/src/engine/host_embedding.dart
+@@ -0,0 +1,86 @@
++// Copyright 2013 The Flutter Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++import 'dart:async';
++
++import 'package:ui/ui.dart' as ui;
++import 'package:ui/ui_web/src/ui_web.dart' as ui_web;
++
++/// What the page cannot learn from the browser when an app embeds it in a
++/// WebView (for example a root manager's module WebUI), supplied by that
++/// embedding. Every value is null in a plain browser tab, and null means "use
++/// what the browser reports".
++class HostEmbedding {
++  HostEmbedding._();
++
++  static final HostEmbedding instance = HostEmbedding._();
++
++  final StreamController<void> _metrics = StreamController<void>.broadcast(sync: true);
++  final StreamController<void> _lifecycle = StreamController<void>.broadcast(sync: true);
++  final StreamController<void> _brightness = StreamController<void>.broadcast(sync: true);
++
++  /// Fires when [viewPadding] or [keyboardInset] change.
++  Stream<void> get onMetricsChanged => _metrics.stream;
++
++  /// Fires when [appLifecycleState] changes.
++  Stream<void> get onAppLifecycleStateChanged => _lifecycle.stream;
++
++  /// Fires when [platformBrightness] changes.
++  Stream<void> get onPlatformBrightnessChanged => _brightness.stream;
++
++  /// Safe-area padding the host draws over (status and navigation bars,
++  /// cutouts), in logical pixels.
++  ui_web.HostInsets? get viewPadding => _viewPadding;
++  ui_web.HostInsets? _viewPadding;
++  set viewPadding(ui_web.HostInsets? value) {
++    if (value == _viewPadding) {
++      return;
++    }
++    _viewPadding = value;
++    _metrics.add(null);
++  }
++
++  /// Height of the on-screen keyboard as the host reports it, in logical
++  /// pixels.
++  double? get keyboardInset => _keyboardInset;
++  double? _keyboardInset;
++  set keyboardInset(double? value) {
++    if (value == _keyboardInset) {
++      return;
++    }
++    _keyboardInset = value;
++    _metrics.add(null);
++  }
++
++  /// The lifecycle state the host reports where the page's visibility does not
++  /// follow it (a WebView kept `visible` while its app is in the background).
++  ui.AppLifecycleState? get appLifecycleState => _appLifecycleState;
++  ui.AppLifecycleState? _appLifecycleState;
++  set appLifecycleState(ui.AppLifecycleState? value) {
++    if (value == _appLifecycleState) {
++      return;
++    }
++    _appLifecycleState = value;
++    _lifecycle.add(null);
++  }
++
++  /// The host's light or dark mode, where `prefers-color-scheme` does not
++  /// follow it.
++  ui.Brightness? get platformBrightness => _platformBrightness;
++  ui.Brightness? _platformBrightness;
++  set platformBrightness(ui.Brightness? value) {
++    if (value == _platformBrightness) {
++      return;
++    }
++    _platformBrightness = value;
++    _brightness.add(null);
++  }
++
++  /// Closes the page after `SystemNavigator.pop` has unwound browser history,
++  /// as closing the tab would.
++  Future<void> Function()? exitHandler;
++
++  /// Clipboard used instead of `navigator.clipboard`.
++  ui_web.HostClipboard? clipboard;
++}
+diff --git a/engine/src/flutter/lib/web_ui/lib/ui_web/src/ui_web.dart b/engine/src/flutter/lib/web_ui/lib/ui_web/src/ui_web.dart
+index c5e4907e5c6..bcac7f66b34 100644
+--- a/engine/src/flutter/lib/web_ui/lib/ui_web/src/ui_web.dart
++++ b/engine/src/flutter/lib/web_ui/lib/ui_web/src/ui_web.dart
+@@ -12,6 +12,7 @@ export 'ui_web/asset_manager.dart';
+ export 'ui_web/benchmarks.dart';
+ export 'ui_web/browser_detection.dart';
+ export 'ui_web/flutter_views_proxy.dart';
++export 'ui_web/host_embedding.dart';
+ export 'ui_web/images.dart';
+ export 'ui_web/initialization.dart';
+ export 'ui_web/navigation/platform_location.dart';
+diff --git a/engine/src/flutter/lib/web_ui/lib/ui_web/src/ui_web/host_embedding.dart b/engine/src/flutter/lib/web_ui/lib/ui_web/src/ui_web/host_embedding.dart
+new file mode 100644
+index 00000000000..bc2d2dec16a
+--- /dev/null
++++ b/engine/src/flutter/lib/web_ui/lib/ui_web/src/ui_web/host_embedding.dart
+@@ -0,0 +1,78 @@
++// Copyright 2013 The Flutter Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++import 'package:ui/src/engine.dart';
++import 'package:ui/ui.dart' as ui;
++
++/// Insets in logical pixels (CSS pixels).
++class HostInsets {
++  const HostInsets({this.left = 0, this.top = 0, this.right = 0, this.bottom = 0});
++
++  final double left;
++  final double top;
++  final double right;
++  final double bottom;
++
++  @override
++  bool operator ==(Object other) =>
++      other is HostInsets &&
++      other.left == left &&
++      other.top == top &&
++      other.right == right &&
++      other.bottom == bottom;
++
++  @override
++  int get hashCode => Object.hash(left, top, right, bottom);
++
++  @override
++  String toString() => 'HostInsets($left, $top, $right, $bottom)';
++}
++
++/// Text clipboard supplied by a host where `navigator.clipboard` is missing or
++/// refused.
++abstract class HostClipboard {
++  Future<String?> getText();
++  Future<void> setText(String text);
++}
++
++/// Sets the safe-area padding the embedding host draws over, in logical
++/// pixels, or null to use the browser's (always zero).
++///
++/// For pages embedded in an app's WebView. A browser tab never calls this.
++void setHostViewPadding(HostInsets? padding) {
++  HostEmbedding.instance.viewPadding = padding;
++}
++
++/// Sets the on-screen keyboard height the host reports, in logical pixels, or
++/// null to measure it from the visual viewport.
++void setHostKeyboardInset(double? bottom) {
++  HostEmbedding.instance.keyboardInset = bottom;
++}
++
++/// Sets the lifecycle state the host reports, or null to follow the page's
++/// visibility and focus.
++///
++/// For hosts that keep the page `visible` while their app is in the
++/// background: report [ui.AppLifecycleState.hidden] on pause and null on
++/// resume.
++void setHostAppLifecycleState(ui.AppLifecycleState? state) {
++  HostEmbedding.instance.appLifecycleState = state;
++}
++
++/// Sets the host's light or dark mode, or null to follow
++/// `prefers-color-scheme`.
++void setHostPlatformBrightness(ui.Brightness? brightness) {
++  HostEmbedding.instance.platformBrightness = brightness;
++}
++
++/// Sets what closes the page when the app pops its last route
++/// (`SystemNavigator.pop`), after browser history has been unwound.
++void setHostExitHandler(Future<void> Function()? handler) {
++  HostEmbedding.instance.exitHandler = handler;
++}
++
++/// Sets a clipboard to use instead of `navigator.clipboard`, or null.
++void setHostClipboard(HostClipboard? clipboard) {
++  HostEmbedding.instance.clipboard = clipboard;
++}
+-- 
+2.43.0
+

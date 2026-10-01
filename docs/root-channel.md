@@ -5,9 +5,9 @@ Dart program started once by the page through the manager's bridge. It runs as
 root, serves one WebSocket on 127.0.0.1, and does three things: launch root
 processes and stream their output, carry stdin to them, and read small files
 from the module directory. Job stores, file APIs and plugins are built on top
-by their owners. An app's own root process (`squadron_process` serve mode,
-contract in that repo's `docs/webui-launch.md`) is started through it as a
-detached process.
+by their owners. An app's own root process (`squadron_process` serve mode; launch contract
+owned by `bricks`, generic launcher rules in `squadron_process`
+`docs/launchers.md`) is started through it as a detached process.
 
 Status: **v1**. Additive changes only (new optional fields, new ops); anything
 else bumps `protocol`.
@@ -19,6 +19,7 @@ else bumps `protocol`.
   root                       POSIX sh launcher (packages/flutter_webui_root/module/root)
   <abi>/flutter_webui_root.aot   AOT snapshot of bin/flutter_webui_root.dart
   <abi>/dartaotruntime       Dart AOT runtime that runs on Android
+  <abi>/ld-linux-*.so.*, lib*.so.*   only for a linux (glibc) runtime: its loader and libc
 <moddir>/webroot/.run/
   session.json               written by the channel (below)
   root.log                   channel stderr, truncated on each start
@@ -27,9 +28,11 @@ else bumps `protocol`.
 ```
 
 `<abi>` is `arm64-v8a` or `x86_64`. `flutter_p0g` compiles the snapshot and
-ships the runtime (stock `dart compile exe` has no Android target; the runtime
-route is being proven in devicelab). The launcher only needs the two files per
-ABI.
+ships the runtime: stock `dart compile exe` has no Android target. Either an
+Android-built `dartaotruntime` (being proven in devicelab), or the SDK's linux
+`dartaotruntime` with the glibc loader and libc/libm/libdl/libpthread next to
+it (runs on a Linux host with the system libraries hidden; not yet tried on a
+device). The launcher picks the loader when one is present.
 
 ## Discovery: `webroot/.run/session.json`
 
