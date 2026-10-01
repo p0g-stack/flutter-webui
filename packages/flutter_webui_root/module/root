@@ -1,0 +1,35 @@
+#!/system/bin/sh
+# flutter-webui root channel launcher. Lives at <moddir>/flutter_webui/root.
+# Usage: sh root start    start the channel detached (returns at once)
+#        sh root serve    run the channel in the foreground
+# SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+
+dir=${0%/*}
+case "$dir" in /*) ;; *) dir=$(cd "$dir" && pwd) ;; esac
+moddir=${dir%/*}
+run=$moddir/webroot/.run
+
+case "$(uname -m)" in
+  aarch64 | arm64) abi=arm64-v8a ;;
+  x86_64) abi=x86_64 ;;
+  *) echo "flutter_webui: unsupported CPU $(uname -m)" >&2; exit 1 ;;
+esac
+
+case "$1" in
+  start)
+    mkdir -p "$run"
+    if command -v setsid >/dev/null 2>&1; then
+      setsid sh "$dir/root" serve </dev/null >>"$run/root.log" 2>&1 &
+    else
+      nohup sh "$dir/root" serve </dev/null >>"$run/root.log" 2>&1 &
+    fi
+    exit 0
+    ;;
+  serve)
+    exec "$dir/$abi/dartaotruntime" "$dir/$abi/flutter_webui_root.aot" serve --module-dir "$moddir"
+    ;;
+  *)
+    echo "usage: sh $0 start|serve" >&2
+    exit 64
+    ;;
+esac
