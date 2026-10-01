@@ -52,7 +52,14 @@ final class JsHostBridge implements HostBridge {
 
   @override
   Map<String, Object?>? moduleInfo() {
-    final raw = callKsu('moduleInfo');
+    final Object? raw;
+    try {
+      raw = callKsu('moduleInfo');
+    } on Object {
+      // WebUI X throws a Java exception from moduleInfo() when its module
+      // list has a null entry; the id then comes from the build's <meta>.
+      return null;
+    }
     if (raw is! String) return null;
     try {
       final decoded = jsonDecode(raw);

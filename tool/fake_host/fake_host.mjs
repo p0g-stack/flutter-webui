@@ -29,6 +29,7 @@ const USAGE = `usage: node tool/fake_host/fake_host.mjs --webroot <dir> [options
   --viewport WxH        CSS px (default 412x860)
   --deny-local-network  do not grant Local Network Access (dev.html then cannot reach 127.0.0.1)
   --csp <policy>        send this Content-Security-Policy with HTML pages (as WebUI X adds one)
+  --late-globals <ms>   define ksu, webui and $<id> this long after page start (as WebUI X does)
   --verbose             also log headless Chromium's software-GL console noise
 exit status: 0 first frame seen, 1 no first frame (or the page died), 2 bad usage`;
 
@@ -96,6 +97,7 @@ function parseArgs(argv) {
       case '--timeout': o.timeout = Number(next()); break;
       case '--hold': o.hold = Number(next()); break;
       case '--viewport': o.viewport = next().split('x').map(Number); break;
+      case '--late-globals': o.late = Number(next()); break;
       case '--verbose': o.verbose = true; break;
       case '--csp': o.csp = next(); break;
       case '--deny-local-network': o.denyLocalNetwork = true; break;
@@ -163,15 +165,20 @@ function installBridge(cfg) {
     mmrl() { return true; },
   };
   for (const name of cfg.ksu) ksu[name] = methods[name];
-  window.ksu = ksu;
+  // WebUI X defines its globals after the page starts (devicelab: undefined at
+  // document start); --late-globals <ms> does the same.
+  const define = (fn) => (cfg.late == null ? fn() : setTimeout(fn, cfg.late));
+  define(() => { window.ksu = ksu; });
   if (cfg.webui) {
     const webui = {
       exit() { call('webui.exit', []); },
       startActivity(intent) { call('webui.startActivity', [intent]); },
     };
-    window.webui = Object.fromEntries(cfg.webui.map((n) => [n, webui[n]]));
     const global = '$' + cfg.info.id.replace(/[^a-zA-Z0-9_]/g, '_');
-    window[global] = { isDarkMode() { call(global + '.isDarkMode', []); return cfg.dark; } };
+    define(() => {
+      window.webui = Object.fromEntries(cfg.webui.map((n) => [n, webui[n]]));
+      window[global] = { isDarkMode() { call(global + '.isDarkMode', []); return cfg.dark; } };
+    });
   }
   if (cfg.wx && cfg.insets) {
     // WebUI X injects the variables itself rather than through a stylesheet.
@@ -205,6 +212,7 @@ async function main() {
     ksu: profile.ksu, webui: profile.webui, wx: !!profile.wx, bare: !!profile.bare, dark: o.dark,
     info: { id: moduleId, name: moduleId, moduleDir: `/data/adb/modules/${moduleId}` },
     insets: hasInsets ? insets : null,
+    late: o.late ?? null,
   };
 
   out('fake_host', `host=${o.host} module=${moduleId} webroot=${o.webroot} entry=${ORIGIN}/${o.entry}`);
