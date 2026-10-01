@@ -32,6 +32,31 @@ abstract interface class TextClipboard {
   Future<void> setText(String text);
 }
 
+/// The engine clipboard on WebUI hosts. The embedding installs the browser's
+/// (async Clipboard API, which WebView refuses to read); a plugin may [use]
+/// another, such as `clipboard_webui`'s, which falls back to the module's app.
+/// Either order works: [use] before the embedding installs, or after.
+abstract final class WebUiClipboard {
+  static TextClipboard? _used;
+  static WebUiEmbedding? _installed;
+
+  /// The embedding's own clipboard (the browser's); null until a WebUI
+  /// embedding installs, and in a browser tab.
+  static TextClipboard? get browser => _installed?.clipboard;
+
+  /// Makes [clipboard] the engine clipboard on WebUI hosts.
+  static void use(TextClipboard clipboard) {
+    _used = clipboard;
+    _installed?.hooks.setClipboard(clipboard);
+  }
+
+  /// Forgets [use]'s clipboard and the installed embedding. For tests.
+  static void debugReset() {
+    _used = null;
+    _installed = null;
+  }
+}
+
 /// Connects a WebUI host to the engine, so a stock app behaves as in a
 /// browser tab:
 ///
@@ -42,7 +67,7 @@ abstract interface class TextClipboard {
 /// | back | WebView history, kept reachable (`_installBackEntry`) | `WX_ON_BACK` = `history.back()` |
 /// | `SystemNavigator.pop` | `ksu.exit()` after history unwinds | `webui.exit()` |
 /// | brightness | the manager's `colors.css` background, else `prefers-color-scheme` | `$<id>.isDarkMode()` on start and resume |
-/// | clipboard | [clipboard] | [clipboard] |
+/// | clipboard | [clipboard], or [WebUiClipboard.use]'s | same |
 final class WebUiEmbedding {
   WebUiEmbedding(this.host, this.bridge, this.hooks, {this.clipboard});
 
@@ -63,7 +88,9 @@ final class WebUiEmbedding {
     if (host.kind == WebUiHostKind.webuix) _readWxBrightness();
     if (!host.isWebUi) return;
     _installExit();
-    if (clipboard != null) hooks.setClipboard(clipboard);
+    WebUiClipboard._installed = this;
+    final engineClipboard = WebUiClipboard._used ?? clipboard;
+    if (engineClipboard != null) hooks.setClipboard(engineClipboard);
     _installInsets();
     if (host.kind != WebUiHostKind.webuix) _installColorsBrightness();
     if (host.kind != WebUiHostKind.webuix) _installBackEntry();
@@ -137,6 +164,9 @@ final class WebUiEmbedding {
       s.cancel();
     }
     _subscriptions.clear();
+    if (identical(WebUiClipboard._installed, this)) {
+      WebUiClipboard._installed = null;
+    }
     if (host.isWebUi && host.kind != WebUiHostKind.webuix) {
       bridge.popStateFilter = null;
     }

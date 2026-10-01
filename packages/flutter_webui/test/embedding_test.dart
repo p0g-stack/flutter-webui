@@ -18,6 +18,8 @@ import 'fake_host.dart';
 }
 
 void main() {
+  tearDown(WebUiClipboard.debugReset);
+
   test('a browser tab gets nothing', () {
     final (bridge, hooks, _) = install(FakeBridge.browser());
     expect(hooks.log, isEmpty);
@@ -41,6 +43,31 @@ void main() {
       expect(hooks.lifecycle, isNull);
     },
   );
+
+  test('a plugin clipboard replaces the browser one, in either order', () {
+    final mine = FakeClipboard();
+    final (_, hooks, embedding) = install(FakeBridge.kernelsu());
+    addTearDown(embedding.dispose);
+    final browser = hooks.clipboard;
+    expect(WebUiClipboard.browser, same(browser));
+    WebUiClipboard.use(mine);
+    expect(hooks.clipboard, same(mine));
+    // A later embedding (hot restart) keeps the plugin's.
+    embedding.dispose();
+    expect(WebUiClipboard.browser, isNull);
+    final (_, hooks2, embedding2) = install(FakeBridge.kernelsu());
+    addTearDown(embedding2.dispose);
+    expect(hooks2.clipboard, same(mine));
+  });
+
+  test('a plugin clipboard stays out of a browser tab', () {
+    WebUiClipboard.use(FakeClipboard());
+    final (_, hooks, embedding) = install(FakeBridge.browser());
+    addTearDown(embedding.dispose);
+    expect(hooks.clipboard, isNull);
+    WebUiClipboard.use(FakeClipboard());
+    expect(hooks.clipboard, isNull);
+  });
 
   test('Next: enableInsets; exit leaves Back to the host', () async {
     final (bridge, hooks, _) = install(FakeBridge.next());
