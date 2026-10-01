@@ -150,6 +150,19 @@ class FakeBridge implements HostBridge {
   @override
   Stream<void> get cssInsetsChanged => insetsController.stream;
 
+  /// CSS custom properties on `<html>`, by name without `--`.
+  final Map<String, String> cssVariables = {};
+
+  @override
+  String? cssVariable(String name) => cssVariables[name];
+
+  final StreamController<void> colorsController = StreamController.broadcast(
+    sync: true,
+  );
+
+  @override
+  Stream<void> get cssColorsChanged => colorsController.stream;
+
   @override
   void historyBack() => backs++;
 

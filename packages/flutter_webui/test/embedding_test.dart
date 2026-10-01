@@ -178,6 +178,40 @@ void main() {
     }
   });
 
+  test('KernelSU: brightness follows the theme colours when served', () {
+    final bridge = FakeBridge.kernelsu()
+      ..cssVariables['background'] = '#1a1c1e';
+    final (_, hooks, _) = install(bridge);
+    expect(hooks.brightness, HostBrightness.dark);
+    // Forced light, read again on a reload of colors.css.
+    bridge.cssVariables['background'] = '#FDFCFF';
+    bridge.colorsController.add(null);
+    expect(hooks.brightness, HostBrightness.light);
+    // No colours (not Monet): the system's.
+    bridge.cssVariables.clear();
+    bridge.colorsController.add(null);
+    expect(hooks.brightness, isNull);
+  });
+
+  test('WebUI X keeps isDarkMode() over its colours', () {
+    final bridge = FakeBridge.webuix()..cssVariables['background'] = '#ffffff';
+    final (_, hooks, _) = install(bridge);
+    bridge.colorsController.add(null);
+    expect(hooks.brightness, HostBrightness.dark);
+  });
+
+  test('brightnessOfCssColor', () {
+    expect(brightnessOfCssColor('#000'), HostBrightness.dark);
+    expect(brightnessOfCssColor('#fff'), HostBrightness.light);
+    expect(brightnessOfCssColor(' #111318 '), HostBrightness.dark);
+    expect(brightnessOfCssColor('#f8f9ffff'), HostBrightness.light);
+    expect(brightnessOfCssColor('#757575'), HostBrightness.dark);
+    expect(brightnessOfCssColor('#767676'), HostBrightness.light);
+    for (final bad in [null, '', 'black', 'rgb(0,0,0)', '#12345']) {
+      expect(brightnessOfCssColor(bad), isNull, reason: '$bad');
+    }
+  });
+
   test('dispose stops listening', () {
     final (bridge, hooks, embedding) = install(FakeBridge.webuix());
     embedding.dispose();

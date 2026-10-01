@@ -91,6 +91,15 @@ abstract interface class HostBridge {
   /// Fires when the host may have changed its CSS insets.
   Stream<void> get cssInsetsChanged;
 
+  /// A CSS custom property on `<html>` (`--<name>`), trimmed, or null if
+  /// unset.
+  String? cssVariable(String name);
+
+  /// Fires when the host's `/internal/colors.css` may have changed: its
+  /// first load, and a reload on a system theme change or when the page is
+  /// shown again.
+  Stream<void> get cssColorsChanged;
+
   /// `window.history.back()`.
   void historyBack();
 

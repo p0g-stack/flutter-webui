@@ -19,9 +19,12 @@ const USAGE = `usage: node tool/fake_host/fake_host.mjs --webroot <dir> [options
   --host <profile>      kernelsu | next | apatch | webuix | browser (default kernelsu)
   --entry <path>        page to open (default index.html; e.g. 'dev.html?dev=http://127.0.0.1:8080/')
   --dark                dark system theme (prefers-color-scheme, and $<id>.isDarkMode() on webuix)
+  --manager-colors <hex> serve /internal/colors.css with this --background (the manager's Monet
+                        theme; default: none, answered as a missing file)
   --insets T,B|T,R,B,L  safe-area insets in px (default: the profile's; 0 turns them off)
   --module-id <id>      module id (default: the page's webui-module-id meta, else "demo")
-  --events <list>       after the first frame, in order: pause, resume, back, tap[@x:y], wait<ms>
+  --events <list>       after the first frame, in order: pause, resume, back, tap[@x:y],
+                        system-dark, system-light (prefers-color-scheme), wait<ms>
                         (e.g. tap,wait500,back,pause,wait2000,resume,back; tap is the viewport centre)
   --exec-local          run ksu.exec commands with /bin/sh on this machine (default: run nothing, exit 0)
   --screenshot <png>    screenshot after the first frame and events
@@ -85,6 +88,7 @@ function parseArgs(argv) {
       case '--host': o.host = next(); break;
       case '--entry': o.entry = next().replace(/^\//, ''); break;
       case '--dark': o.dark = true; break;
+      case '--manager-colors': o.managerColors = next(); break;
       case '--insets': {
         const n = next().split(',').map(Number);
         if (n.some(Number.isNaN) || ![1, 2, 4].includes(n.length)) usage('--insets takes T,B or T,R,B,L');
@@ -109,7 +113,7 @@ function parseArgs(argv) {
   if (!o.webroot) usage('--webroot is required');
   if (!fs.existsSync(o.webroot)) usage(`no such directory: ${o.webroot}`);
   if (!PROFILES[o.host]) usage(`unknown host ${o.host}`);
-  for (const e of o.events) if (!/^(pause|resume|back|wait\d+|tap(@\d+:\d+)?)$/.test(e)) usage(`unknown event ${e}`);
+  for (const e of o.events) if (!/^(pause|resume|back|wait\d+|tap(@\d+:\d+)?|system-dark|system-light)$/.test(e)) usage(`unknown event ${e}`);
   return o;
 }
 
@@ -283,6 +287,10 @@ async function main() {
         body: `:root{--safe-area-inset-top:${t}px;--safe-area-inset-right:${r}px;--safe-area-inset-bottom:${b}px;--safe-area-inset-left:${l}px}`,
       });
     }
+    if (url.pathname === '/internal/colors.css' && o.managerColors && !profile.bare) {
+      out('host', `colors.css (--background: ${o.managerColors})`);
+      return route.fulfill({ contentType: 'text/css', body: `:root {\n  --background: ${o.managerColors};\n}\n` });
+    }
     let rel = decodeURIComponent(url.pathname);
     if (rel.endsWith('/')) rel += 'index.html';
     const file = path.join(o.webroot, path.normalize(rel));
@@ -388,6 +396,10 @@ async function sendEvent(page, event, profile) {
   if (wait) {
     out('lifecycle', `wait ${wait[1]} ms`);
     return sleep(Number(wait[1]));
+  }
+  if (event === 'system-dark' || event === 'system-light') {
+    out('lifecycle', `${event}: prefers-color-scheme ${event.slice(7)}`);
+    return page.emulateMedia({ colorScheme: event.slice(7) });
   }
   const tap = event.match(/^tap(?:@(\d+):(\d+))?$/);
   if (tap) {

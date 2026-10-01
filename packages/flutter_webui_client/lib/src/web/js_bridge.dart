@@ -144,6 +144,42 @@ final class JsHostBridge implements HostBridge {
   }();
 
   @override
+  String? cssVariable(String name) {
+    final value = web.window
+        .getComputedStyle(web.document.documentElement!)
+        .getPropertyValue('--$name')
+        .trim();
+    return value.isEmpty ? null : value;
+  }
+
+  @override
+  late final Stream<void> cssColorsChanged = () {
+    final controller = StreamController<void>.broadcast();
+    // The bootstrap's <link id="flutter-webui-colors"> to /internal/colors.css.
+    final element = web.document.getElementById('flutter-webui-colors');
+    if (element == null || !element.isA<web.HTMLLinkElement>()) {
+      return controller.stream;
+    }
+    final link = element as web.HTMLLinkElement;
+    link.addEventListener('load', ((web.Event _) => controller.add(null)).toJS);
+    // KernelSU fills it from its Compose theme, which follows a system theme
+    // change without recreating the activity, and the theme can change in
+    // the manager while the page is hidden: fetch it again then.
+    void reload() => link.href =
+        '/internal/colors.css?t=${DateTime.now().millisecondsSinceEpoch}';
+    web.window
+        .matchMedia('(prefers-color-scheme: dark)')
+        .addEventListener('change', ((web.Event _) => reload()).toJS);
+    web.document.addEventListener(
+      'visibilitychange',
+      ((web.Event _) {
+        if (web.document.visibilityState == 'visible') reload();
+      }).toJS,
+    );
+    return controller.stream;
+  }();
+
+  @override
   Insets? cssInsets() {
     final style = web.window.getComputedStyle(web.document.documentElement!);
     double? side(String name) {

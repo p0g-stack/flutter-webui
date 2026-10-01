@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter_webui_client/flutter_webui_client.dart';
 
@@ -40,7 +41,7 @@ abstract interface class TextClipboard {
 /// | `AppLifecycleState` | page visibility (`web_ui` as is) | `WX_ON_PAUSE` = hidden until `WX_ON_RESUME` |
 /// | back | WebView history, kept reachable (`_installBackEntry`) | `WX_ON_BACK` = `history.back()` |
 /// | `SystemNavigator.pop` | `ksu.exit()` after history unwinds | `webui.exit()` |
-/// | brightness | `prefers-color-scheme` | `$<id>.isDarkMode()` on start and resume |
+/// | brightness | the manager's `colors.css` background, else `prefers-color-scheme` | `$<id>.isDarkMode()` on start and resume |
 /// | clipboard | [clipboard] | [clipboard] |
 final class WebUiEmbedding {
   WebUiEmbedding(this.host, this.bridge, this.hooks, {this.clipboard});
@@ -64,6 +65,7 @@ final class WebUiEmbedding {
     _installExit();
     if (clipboard != null) hooks.setClipboard(clipboard);
     _installInsets();
+    if (host.kind != WebUiHostKind.webuix) _installColorsBrightness();
     if (host.kind != WebUiHostKind.webuix) _installBackEntry();
   }
 
@@ -207,6 +209,23 @@ final class WebUiEmbedding {
     }
   }
 
+  /// KernelSU's own light or dark theme (forced, or Monet) reaches its
+  /// Compose UI but not the WebView, whose `prefers-color-scheme` follows the
+  /// system. When it serves its theme colours in `/internal/colors.css`
+  /// (KernelSU in Monet modes or the Material UI, Next on Android 12+), the
+  /// page follows the luminance of their `--background` instead; with no
+  /// colours the engine keeps the system's.
+  void _installColorsBrightness() {
+    _applyColorsBrightness();
+    _subscriptions.add(
+      bridge.cssColorsChanged.listen((_) => _applyColorsBrightness()),
+    );
+  }
+
+  void _applyColorsBrightness() {
+    hooks.setBrightness(brightnessOfCssColor(bridge.cssVariable('background')));
+  }
+
   void _readWxBrightness() {
     final global = host.moduleGlobal;
     if (global == null) return;
@@ -237,4 +256,28 @@ Insets? _insetsFrom(Object? data) {
     left: left ?? 0,
     right: right ?? 0,
   );
+}
+
+/// Dark or light for a CSS hex colour (`#rgb`, `#rrggbb`, `#rrggbbaa`): dark
+/// when white text contrasts with it more than black (relative luminance
+/// below about 0.18). Null for anything else.
+HostBrightness? brightnessOfCssColor(String? css) {
+  if (css == null) return null;
+  final m = RegExp(r'^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$')
+      .firstMatch(css.trim());
+  if (m == null) return null;
+  var hex = m[1]!;
+  if (hex.length == 3) hex = hex.split('').map((c) => '$c$c').join();
+  double channel(int i) {
+    final c = int.parse(hex.substring(i, i + 2), radix: 16) / 255;
+    return c <= 0.04045
+        ? c / 12.92
+        : math.pow((c + 0.055) / 1.055, 2.4) as double;
+  }
+
+  final l = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+  // Contrast with white (1.05 / (l + .05)) beats contrast with black.
+  return (1.05 / (l + 0.05)) > ((l + 0.05) / 0.05)
+      ? HostBrightness.dark
+      : HostBrightness.light;
 }

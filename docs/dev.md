@@ -170,7 +170,8 @@ a machine that has one, nothing needs installing; point
 | `--entry <path>` | page to open; `'dev.html?dev=http://127.0.0.1:8080/'` for the dev loop |
 | `--dark` | `prefers-color-scheme: dark`, and `$<id>.isDarkMode()` true on `webuix` |
 | `--insets T,B` or `T,R,B,L` | safe-area insets in px (default: the profile's) |
-| `--events` | after the first frame, in order: `pause`, `resume`, `back`, `tap[@x:y]` (a click, the viewport centre by default), `wait<ms>` |
+| `--manager-colors <hex>` | serve `/internal/colors.css` with this `--background` (the manager's Monet theme); without it, a missing file |
+| `--events` | after the first frame, in order: `pause`, `resume`, `back`, `tap[@x:y]` (a click, the viewport centre by default), `system-dark`, `system-light` (`prefers-color-scheme`), `wait<ms>` |
 | `--exec-local` | run `ksu.exec` commands with `/bin/sh` here; off by default (exec answers `0, '', ''`) |
 | `--csp <policy>` | send a Content-Security-Policy with HTML pages |
 | `--screenshot <png>`, `--timeout <s>`, `--hold <s>`, `--viewport WxH` | |
