@@ -3,8 +3,7 @@
 
 import 'dart:async';
 
-import 'bridge.dart';
-import 'host.dart';
+import 'package:flutter_webui_client/flutter_webui_client.dart';
 
 /// Lifecycle states the embedding reports. Mirrors `dart:ui`'s
 /// `AppLifecycleState` without importing it, so this file runs on the VM.

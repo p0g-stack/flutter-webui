@@ -28,3 +28,6 @@ Self-contained; no external base file.
   outside hostnames fails. Use IP literals only (it binds `127.0.0.1`), and
   ship `dartaotruntime` plus a `.aot` snapshot, never a `dart compile exe`
   binary (it cannot run through the bundled loader).
+- `flutter_webui_client` must build on a stock Flutter SDK: no `dart:ui`,
+  `dart:ui_web` or Flutter imports. Anything that needs the patched engine
+  goes in the `flutter_webui` plugin.

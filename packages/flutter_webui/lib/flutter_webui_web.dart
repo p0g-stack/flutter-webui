@@ -6,10 +6,10 @@
 library;
 
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
+import 'package:flutter_webui_client/web.dart';
 
 import 'src/embedding.dart';
 import 'src/web/engine_hooks.dart';
-import 'src/web/webui_web.dart';
 
 /// Installs the WebUI handlers into the patched engine.
 abstract final class FlutterWebUi {

@@ -5,9 +5,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_webui/flutter_webui.dart';
-import 'package:flutter_webui/src/io_transport.dart';
+import 'package:test/test.dart';
+import 'package:flutter_webui_client/flutter_webui_client.dart';
+import 'package:flutter_webui_client/src/io_transport.dart';
 import 'package:flutter_webui_root/flutter_webui_root.dart';
 
 /// The page client against the real channel, started in-process where the

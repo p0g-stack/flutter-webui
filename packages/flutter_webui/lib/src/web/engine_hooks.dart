@@ -5,9 +5,9 @@ import 'dart:js_interop';
 import 'dart:ui' as ui;
 import 'dart:ui_web' as ui_web;
 
+import 'package:flutter_webui_client/flutter_webui_client.dart';
 import 'package:web/web.dart' as web;
 
-import '../bridge.dart';
 import '../embedding.dart';
 
 /// [EngineHooks] on the patched `web_ui` (`dart:ui_web` `setHost*`).

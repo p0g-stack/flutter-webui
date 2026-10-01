@@ -44,8 +44,9 @@ must outlive the page (the app's own root process).
 ## Layout
 
 ```
-packages/flutter_webui/       web plugin: host detection, handlers on the patched web_ui hooks,
-                              root-channel client (WebUi.connectRootChannel), tests vs fakes
+packages/flutter_webui_client/ what apps import: host detection (WebUi.host), root-channel client
+                              (WebUi.connectRootChannel), test fakes. Plain Dart, stock SDK.
+packages/flutter_webui/       web plugin: handlers on the patched web_ui hooks. Needs the patched SDK.
 packages/flutter_webui_root/  the root channel (Dart, AOT snapshot) and its launcher (module/root)
 web_ui/                       VERSION (Flutter pin), patches/, tool/build_web_sdk.dart
 bootstrap/                    index.html, flutter_bootstrap.js, flutter_webui.js/.css, dev.html
@@ -62,8 +63,12 @@ An app needs three things, which `flutter_p0g` provides (`create .` adds the
    `web_ui` sources and rebuilds the platform kernels and DDC modules with the
    Dart SDK's own tools (about 20 s, no engine build). Overlay `<dir>` on
    `<flutter>/bin/cache`.
-2. **`flutter_webui` as a dependency.** Its web plugin registrant installs the
-   handlers before `main()`; app code stays stock.
+2. **`flutter_webui` as a dependency of the WebUI build.** Its web plugin
+   registrant installs the handlers before `main()`; app code stays stock. It
+   compiles only against the patched SDK, so apps never depend on it
+   themselves: the build adds it. App code that wants the host or root
+   processes depends on `flutter_webui_client`, which builds anywhere (in a
+   browser or off the web, `WebUi.host` is a browser and the channel fails).
 3. **The bootstrap** laid over `web/`, built with
    `flutter build web --release --no-web-resources-cdn --pwa-strategy=none`.
 

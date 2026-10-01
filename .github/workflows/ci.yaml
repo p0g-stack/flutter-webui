@@ -19,6 +19,9 @@ jobs:
       - name: Root channel tests
         run: dart test
         working-directory: packages/flutter_webui_root
+      - name: Client tests (stock SDK)
+        run: dart test
+        working-directory: packages/flutter_webui_client
       - name: Patches apply and compile (patched web SDK)
         run: dart run web_ui/tool/build_web_sdk.dart --flutter "$FLUTTER_ROOT" --out "$RUNNER_TEMP/patched"
       - name: Use the patched web SDK

@@ -52,13 +52,13 @@ Written by atomic rename once the socket listens. Every manager serves
 }
 ```
 
-Page start (`RootChannel.connect()` in `flutter_webui` does this):
+Page start (`RootChannel.connect()` in `flutter_webui_client` does this):
 1. Fetch `session.json`. If present and `version` matches, connect.
 2. If it is missing, refused, rejected, or another `version`: start the channel
    (after `shutdown` to a live channel of another version), then poll
    `session.json` until a file with a new `pid` appears (50 ms steps, 5 s cap).
 3. The start command is the only string the page passes to the bridge, each
-   part quoted by `flutter_webui`:
+   part quoted by `flutter_webui_client`:
    `sh '<moddir>/flutter_webui/root' start`
    It returns at once (so the blocking `ksu.exec` on KernelSU-family managers
    costs only the fork). The channel runs in its own session with stdin from
@@ -153,10 +153,16 @@ the channel, such as an app's root process:
 <- {"op":"read","id":1,"data":"{\"squadron_process\":1,\"port\":40111,...}"}
 ```
 
-## Page client (`package:flutter_webui`)
+## Page client (`package:flutter_webui_client`)
+
+Plain Dart against a stock SDK, so apps and generated code depend on it
+directly; the `flutter_webui` web plugin is only for the engine handlers.
 
 ```dart
-final channel = await RootChannel.connect();       // discovery + start as above
+import 'package:flutter_webui_client/flutter_webui_client.dart';
+
+WebUi.host;             // WebUiHost: kind, moduleId, moduleDir, ksuMethods
+final channel = await WebUi.connectRootChannel();  // discovery + start as above
 final p = await channel.start(['/system/bin/id']); // RootProcess
 p.stdout; p.stderr;     // Stream<List<int>>
 p.stdin;                // StreamSink<List<int>>; close() sends close-stdin

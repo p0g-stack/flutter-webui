@@ -1,5 +1,5 @@
 name: flutter_webui
-description: The flutter-webui embedder package. Host detection, the handlers that make a stock Flutter web app behave as in a browser tab inside KernelSU-style WebUI hosts, and the root-channel client.
+description: The flutter-webui web plugin. Installs the handlers that make a stock Flutter web app behave as in a browser tab inside KernelSU-style WebUI hosts. Needs the patched web engine.
 version: 0.1.0
 publish_to: none
 resolution: workspace
@@ -13,8 +13,8 @@ dependencies:
     sdk: flutter
   flutter_web_plugins:
     sdk: flutter
-  flutter_webui_root:
-    path: ../flutter_webui_root
+  flutter_webui_client:
+    path: ../flutter_webui_client
   web: ^1.1.0
 
 dev_dependencies:

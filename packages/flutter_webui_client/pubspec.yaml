@@ -1,0 +1,16 @@
+name: flutter_webui_client
+description: The page side of flutter-webui for apps. WebUI host detection and the root-channel client. Plain Dart on a stock SDK; it never touches the patched engine.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter_webui_root:
+    path: ../flutter_webui_root
+  web: ^1.1.0
+
+dev_dependencies:
+  test: ^1.25.0

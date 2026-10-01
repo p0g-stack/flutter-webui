@@ -3,16 +3,13 @@
 
 /// flutter-webui: a stock Flutter web app in a KernelSU-style WebUI host.
 ///
-/// Apps need nothing from here to behave as in a browser tab: the web plugin
-/// registrant installs the handlers. Import this for [WebUi.host] (what the
-/// host offers) and [WebUi.connectRootChannel] (root processes, see
-/// `docs/root-channel.md`).
+/// This is the web plugin. Its registrant installs the handlers before
+/// `main()` and it compiles only against the patched web engine, so the
+/// build tool adds it to WebUI builds. Apps import
+/// `package:flutter_webui_client` for [WebUi.host] and
+/// [WebUi.connectRootChannel]; it is re-exported here.
 library;
 
-export 'src/bridge.dart';
+export 'package:flutter_webui_client/flutter_webui_client.dart';
+
 export 'src/embedding.dart';
-export 'src/host.dart';
-export 'src/quote.dart';
-export 'src/root_channel.dart';
-export 'src/webui_stub.dart'
-    if (dart.library.js_interop) 'src/web/webui_web.dart';

@@ -1,10 +1,10 @@
 // Copyright 2026 The p0g-stack authors.
 // SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
 
-import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_webui/flutter_webui.dart';
+import 'package:test/test.dart';
+import 'package:flutter_webui_client/flutter_webui_client.dart';
 
-import 'fake_host.dart';
+import 'package:flutter_webui_client/testing.dart';
 
 void main() {
   test('a browser tab is not a WebUI host', () {
