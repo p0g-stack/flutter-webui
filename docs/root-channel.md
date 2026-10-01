@@ -20,6 +20,8 @@ else bumps `protocol`.
   <abi>/flutter_webui_root.aot   AOT snapshot of bin/flutter_webui_root.dart
   <abi>/dartaotruntime       Dart AOT runtime that runs on Android
   <abi>/ld-linux-*.so.*, lib*.so.*   only for a linux (glibc) runtime: its loader and libc
+<moddir>/tmp/                0700, the channel's TMPDIR (set by the launcher; root
+                             shells may start with an empty environment)
 <moddir>/webroot/.run/         0711: traversable, not listable
   session.json               0644, written by the channel (below)
   root.log                   0600, channel stderr, truncated on each start

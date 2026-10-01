@@ -32,6 +32,10 @@ case "$1" in
     ;;
   serve)
     rt=$dir/$abi
+    # Root shells can start with an empty environment, and the Dart VM needs
+    # a writable TMPDIR (outside webroot, which the manager serves).
+    export TMPDIR="$moddir/tmp"
+    (umask 077 && mkdir -p "$TMPDIR")
     # A linux (glibc) runtime ships its loader and libraries next to it; an
     # Android-built runtime runs directly.
     for ld in "$rt"/ld-linux-*.so.*; do
