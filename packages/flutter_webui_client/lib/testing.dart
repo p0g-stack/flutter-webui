@@ -156,4 +156,46 @@ class FakeBridge implements HostBridge {
   /// `history.length`; WebUI X v438 pages report 1 at the root route.
   @override
   int historyLength = 2;
+
+  /// `history.state`; starts as `web_ui`'s single-entry "flutter" entry.
+  @override
+  Object? historyState = const {'flutter': true};
+
+  /// replaceState / pushState calls, in order, as `(method, state)`.
+  final List<(String, Object?)> historyWrites = [];
+
+  @override
+  void historyReplaceState(Object? state) {
+    historyWrites.add(('replace', state));
+    historyState = state;
+  }
+
+  @override
+  void historyPushState(Object? state) {
+    historyWrites.add(('push', state));
+    historyLength++;
+    historyState = state;
+  }
+
+  /// `history.go` deltas, in order.
+  final List<int> historyGos = [];
+
+  @override
+  void historyGo(int delta) => historyGos.add(delta);
+
+  @override
+  bool Function(Object? state)? popStateFilter;
+
+  /// Delivers a `popstate` with [state] (after setting [historyState]);
+  /// returns whether [popStateFilter] stopped it.
+  bool popState(Object? state) {
+    historyState = state;
+    return popStateFilter?.call(state) ?? false;
+  }
+
+  final StreamController<void> activationController =
+      StreamController.broadcast(sync: true);
+
+  @override
+  Stream<void> get userActivations => activationController.stream;
 }

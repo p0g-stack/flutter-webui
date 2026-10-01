@@ -24,7 +24,7 @@ the bootstrap forces single-threaded Skwasm, keeps hash routing and
 | Detected as | `webui` | `webui` | `webui` | `webuix` (`ksu.mmrl` or `window.webui`) |
 | Safe-area padding | `insets.css` (`--safe-area-inset-*`), `ksu.enableEdgeToEdge(true)` | same, `ksu.enableInsets(true)` | none (host adds margins) | injected variables, `WX_ON_INSETS` (units unverified) |
 | Lifecycle | page visibility, as `web_ui`: `webView.onPause()` hides the page (by Chromium source), also for its own file chooser | page visibility: no `onPause()`, Home hides the window (inferred) | same | `WX_ON_PAUSE` = hidden until `WX_ON_RESUME`; `onPause()` also hides the page by source, so this agrees |
-| Back | WebView history: `web_ui`'s history entries turn Back into `popRoute` | same | same | `WX_ON_BACK` = `history.back()` (needs `backInterceptor: "javascript"`) |
+| Back | WebView history: `web_ui`'s entries turn Back into `popRoute`; Chromium leaves entries pushed without a gesture out of `canGoBack()`, so on the first gesture the plugin re-pushes the "flutter" entry and afterwards answers Back by going forward to it (no new push) | same | same | `WX_ON_BACK` = `history.back()` (needs `backInterceptor: "javascript"`) |
 | `SystemNavigator.pop` at the root | history restored, then `ksu.exit()` | history restored; no exit method, the next Back closes | same | `webui.exit()` |
 | Brightness | `prefers-color-scheme` | same | same | `$<id>.isDarkMode()` on start and resume |
 | Clipboard | `navigator.clipboard`: write is auto-granted (fallback `execCommand('copy')`); programmatic read is always denied by WebView, user paste in a field works (a plugin can install a root-backed read) | same | same | same (its permission handler never sees clipboard read) |
@@ -104,6 +104,14 @@ WebUI X Portable with root, same emulator (runs 36833152967, 36833446476):
   `popRoute` (020ab92); verified with counter 0.1.5: WebUIActivity closes.
 - `ksu.moduleInfo()` can throw a Java exception (a null module entry); the
   id then comes from the build's `<meta>`.
+
+KernelSU 3.3.0, demo 0.9 (flutter-webui 020ab92): Back from a pushed route
+(two routes deep) closed the WebUI, where WebUI X returned to the home route.
+KernelSU enables its Back handler from `canGoBack()`, read in
+`doUpdateVisitedHistory`, and Chromium's history intervention leaves
+`web_ui`'s startup entry out of it because it was pushed without user
+activation. Reproduced in the fake host and fixed in the plugin (Back entry
+kept reachable after the first gesture); the fix awaits a devicelab run.
 
 ## Open (devicelab)
 

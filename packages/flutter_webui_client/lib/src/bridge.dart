@@ -96,4 +96,24 @@ abstract interface class HostBridge {
 
   /// `window.history.length`.
   int get historyLength;
+
+  /// `window.history.state`, as Dart values.
+  Object? get historyState;
+
+  /// `history.replaceState(state, '')`: the current entry, same URL.
+  void historyReplaceState(Object? state);
+
+  /// `history.pushState(state, '')`: a new entry, same URL.
+  void historyPushState(Object? state);
+
+  /// `history.go(delta)`.
+  void historyGo(int delta);
+
+  /// Sees each `popstate` before the page's own listeners; returning true
+  /// stops it there.
+  set popStateFilter(bool Function(Object? state)? filter);
+
+  /// Input that gave the page user activation (a tap or a key), as Chromium
+  /// counts it (`navigator.userActivation.isActive`).
+  Stream<void> get userActivations;
 }

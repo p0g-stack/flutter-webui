@@ -170,7 +170,7 @@ a machine that has one, nothing needs installing; point
 | `--entry <path>` | page to open; `'dev.html?dev=http://127.0.0.1:8080/'` for the dev loop |
 | `--dark` | `prefers-color-scheme: dark`, and `$<id>.isDarkMode()` true on `webuix` |
 | `--insets T,B` or `T,R,B,L` | safe-area insets in px (default: the profile's) |
-| `--events` | after the first frame, in order: `pause`, `resume`, `back`, `wait<ms>` |
+| `--events` | after the first frame, in order: `pause`, `resume`, `back`, `tap[@x:y]` (a click, the viewport centre by default), `wait<ms>` |
 | `--exec-local` | run `ksu.exec` commands with `/bin/sh` here; off by default (exec answers `0, '', ''`) |
 | `--csp <policy>` | send a Content-Security-Policy with HTML pages |
 | `--screenshot <png>`, `--timeout <s>`, `--hold <s>`, `--viewport WxH` | |
@@ -182,11 +182,19 @@ Profiles:
 
 | Profile | Globals | insets | Missing files | pause / resume / back |
 |---|---|---|---|---|
-| `kernelsu` | `ksu` with `enableEdgeToEdge`, `moduleInfo`, `exit` | `/internal/insets.css`, 24/48 | empty 200 | `visibilitychange` hidden / visible; `history.back()` |
+| `kernelsu` | `ksu` with `enableEdgeToEdge`, `moduleInfo`, `exit` | `/internal/insets.css`, 24/48 | empty 200 | `visibilitychange` hidden / visible; `WebView.goBack()` if `canGoBack()`, else the activity finishes (below) |
 | `next` | `ksu` with `enableInsets`, `moduleInfo`, no `exit` | `insets.css`, 24/48 | empty 200 | same |
 | `apatch` | `ksu` with `enableInsets`, no `moduleInfo` (id from the meta), no `exit` | none | empty 200 | same |
 | `webuix` | `ksu` with `moduleInfo`, `mmrl`; `webui.exit`; `$<id>.isDarkMode()` | variables on `<html>` and `insets.css`, 30/20 | 404 | `WX_ON_PAUSE` / `WX_ON_RESUME` / `WX_ON_BACK` messages (JSON strings) |
-| `browser` | none | none | 404 | as `kernelsu` |
+| `browser` | none | none | 404 | as `kernelsu`, Back is `history.back()` |
+
+Back on the KernelSU-family profiles follows Chromium's history intervention,
+which `WebView.canGoBack()` honours: an entry the page left by `pushState`
+without user activation (trusted input in the last 5 s here) is skipped, and
+with nothing left the activity would finish. The model is strict (no later
+unmarking), so it reproduces devicelab's KernelSU 3.3.0 result: without the
+plugin's Back entry (`_installBackEntry` in `flutter_webui`), Back from a
+pushed route closes the page.
 
 Output, one line each: `[bridge]` calls into the host (`ksu.exit()`,
 `ksu.enableEdgeToEdge(true)`, `ksu.exec("...")`, `$id.isDarkMode()`),

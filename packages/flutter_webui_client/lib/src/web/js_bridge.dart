@@ -197,4 +197,55 @@ final class JsHostBridge implements HostBridge {
 
   @override
   int get historyLength => web.window.history.length;
+
+  @override
+  Object? get historyState => web.window.history.state.dartify();
+
+  @override
+  void historyReplaceState(Object? state) =>
+      web.window.history.replaceState(state.jsify(), '');
+
+  @override
+  void historyPushState(Object? state) =>
+      web.window.history.pushState(state.jsify(), '');
+
+  @override
+  void historyGo(int delta) => web.window.history.go(delta);
+
+  bool Function(Object? state)? _popStateFilter;
+
+  @override
+  set popStateFilter(bool Function(Object? state)? filter) {
+    if (_popStateFilter == null && filter != null) {
+      // Capture listeners on the target run before web_ui's (Chromium 89+).
+      web.window.addEventListener(
+        'popstate',
+        ((web.PopStateEvent e) {
+          if (_popStateFilter?.call(e.state.dartify()) ?? false) {
+            e.stopImmediatePropagation();
+          }
+        }).toJS,
+        web.AddEventListenerOptions(capture: true),
+      );
+    }
+    _popStateFilter = filter;
+  }
+
+  @override
+  late final Stream<void> userActivations = () {
+    final controller = StreamController<void>.broadcast(sync: true);
+    // Chromium's activation-triggering events, seen in the capture phase
+    // before the engine handles them.
+    final listener = ((web.Event _) {
+      if (web.window.navigator.userActivation.isActive) controller.add(null);
+    }).toJS;
+    for (final type in ['keydown', 'mousedown', 'pointerup', 'touchend']) {
+      web.window.addEventListener(
+        type,
+        listener,
+        web.AddEventListenerOptions(capture: true, passive: true),
+      );
+    }
+    return controller.stream;
+  }();
 }

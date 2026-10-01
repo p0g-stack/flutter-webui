@@ -21,7 +21,8 @@ const USAGE = `usage: node tool/fake_host/fake_host.mjs --webroot <dir> [options
   --dark                dark system theme (prefers-color-scheme, and $<id>.isDarkMode() on webuix)
   --insets T,B|T,R,B,L  safe-area insets in px (default: the profile's; 0 turns them off)
   --module-id <id>      module id (default: the page's webui-module-id meta, else "demo")
-  --events <list>       after the first frame, in order: pause, resume, back, wait<ms> (e.g. pause,wait2000,resume,back)
+  --events <list>       after the first frame, in order: pause, resume, back, tap[@x:y], wait<ms>
+                        (e.g. tap,wait500,back,pause,wait2000,resume,back; tap is the viewport centre)
   --exec-local          run ksu.exec commands with /bin/sh on this machine (default: run nothing, exit 0)
   --screenshot <png>    screenshot after the first frame and events
   --timeout <s>         seconds to wait for the first frame (default 60)
@@ -108,7 +109,7 @@ function parseArgs(argv) {
   if (!o.webroot) usage('--webroot is required');
   if (!fs.existsSync(o.webroot)) usage(`no such directory: ${o.webroot}`);
   if (!PROFILES[o.host]) usage(`unknown host ${o.host}`);
-  for (const e of o.events) if (!/^(pause|resume|back|wait\d+)$/.test(e)) usage(`unknown event ${e}`);
+  for (const e of o.events) if (!/^(pause|resume|back|wait\d+|tap(@\d+:\d+)?)$/.test(e)) usage(`unknown event ${e}`);
   return o;
 }
 
@@ -270,6 +271,7 @@ async function main() {
   });
   await page.addInitScript(installBridge, cfg);
   await page.addInitScript(pageWatch);
+  if (!profile.wx && !profile.bare) await page.addInitScript(historyModel);
 
   await page.route(`${ORIGIN}/**`, async (route) => {
     const url = new URL(route.request().url());
@@ -325,11 +327,54 @@ function fulfillMissing(route, profile) {
     : route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' });
 }
 
+// WebView.canGoBack() as Chromium answers it: its history intervention skips
+// an entry the page left by pushState without user activation (modelled
+// strictly: no later unmarking). Tracks the session history of this document.
+function historyModel() {
+  const h = window.history;
+  const model = { entries: [{ skip: false }], index: 0 };
+  window.__fakeHostHistory = model;
+  // Transient activation from trusted input only, as Chromium grants it for
+  // 5 s (navigator.userActivation also counts Playwright's evaluate calls).
+  let activatedAt = -Infinity;
+  const activeNow = () => performance.now() - activatedAt < 5000;
+  for (const type of ['keydown', 'mousedown', 'pointerup', 'touchend']) {
+    window.addEventListener(type, (e) => { if (e.isTrusted) activatedAt = performance.now(); }, true);
+  }
+  const push = h.pushState.bind(h);
+  const go = h.go.bind(h);
+  h.pushState = (...args) => {
+    if (!activeNow()) model.entries[model.index].skip = true;
+    model.entries.length = model.index + 1;
+    model.entries.push({ skip: false });
+    model.index++;
+    return push(...args);
+  };
+  h.go = (n = 0) => {
+    model.index = Math.max(0, Math.min(model.entries.length - 1, model.index + n));
+    return go(n);
+  };
+  h.back = () => h.go(-1);
+  h.forward = () => h.go(1);
+  // Offset of the entry WebView.goBack() goes to, or 0 when canGoBack() is false.
+  model.backOffset = () => {
+    for (let i = model.index - 1; i >= 0; i--) if (!model.entries[i].skip) return i - model.index;
+    return 0;
+  };
+}
+
 async function sendEvent(page, event, profile) {
   const wait = event.match(/^wait(\d+)$/);
   if (wait) {
     out('lifecycle', `wait ${wait[1]} ms`);
     return sleep(Number(wait[1]));
+  }
+  const tap = event.match(/^tap(?:@(\d+):(\d+))?$/);
+  if (tap) {
+    const vp = page.viewportSize();
+    const [x, y] = tap[1] ? [Number(tap[1]), Number(tap[2])] : [vp.width / 2, vp.height / 2];
+    out('lifecycle', `tap at ${x},${y}`);
+    return page.mouse.click(x, y);
   }
   if (profile.wx) {
     const type = { pause: 'WX_ON_PAUSE', resume: 'WX_ON_RESUME', back: 'WX_ON_BACK' }[event];
@@ -337,10 +382,14 @@ async function sendEvent(page, event, profile) {
     return page.evaluate((t) => window.postMessage(JSON.stringify({ type: t }), '*'), type);
   }
   if (event === 'back') {
-    // The KernelSU-family activity: WebView history if any, else finish().
-    const canGoBack = await page.evaluate(() => history.length > 1);
-    out('lifecycle', `back: ${canGoBack ? 'history.back()' : 'no history, the activity would finish'}`);
-    if (canGoBack) await page.evaluate(() => history.back());
+    // The KernelSU-family activity: WebView.goBack() if canGoBack(), else finish().
+    if (profile.bare) {
+      out('lifecycle', 'back: history.back()');
+      return page.evaluate(() => history.back());
+    }
+    const offset = await page.evaluate(() => window.__fakeHostHistory.backOffset());
+    out('lifecycle', `back: ${offset ? `canGoBack, history.go(${offset})` : 'canGoBack() false, the activity would finish'}`);
+    if (offset) await page.evaluate((n) => history.go(n), offset);
     return;
   }
   // Pause/resume as a hidden/visible tab, as WebView.onPause() does

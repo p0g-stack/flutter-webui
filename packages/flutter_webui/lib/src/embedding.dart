@@ -38,7 +38,7 @@ abstract interface class TextClipboard {
 /// |---|---|---|
 /// | safe-area padding | `insets.css` variables (edge-to-edge requested) | `WX_ON_INSETS`, injected variables |
 /// | `AppLifecycleState` | page visibility (`web_ui` as is) | `WX_ON_PAUSE` = hidden until `WX_ON_RESUME` |
-/// | back | WebView history (`web_ui` as is) | `WX_ON_BACK` = `history.back()` |
+/// | back | WebView history, kept reachable (`_installBackEntry`) | `WX_ON_BACK` = `history.back()` |
 /// | `SystemNavigator.pop` | `ksu.exit()` after history unwinds | `webui.exit()` |
 /// | brightness | `prefers-color-scheme` | `$<id>.isDarkMode()` on start and resume |
 /// | clipboard | [clipboard] | [clipboard] |
@@ -64,7 +64,56 @@ final class WebUiEmbedding {
     _installExit();
     if (clipboard != null) hooks.setClipboard(clipboard);
     _installInsets();
+    if (host.kind != WebUiHostKind.webuix) _installBackEntry();
   }
+
+  /// KernelSU-family Back is `WebView.canGoBack()`, then `goBack()`, else the
+  /// activity finishes. Chromium's history intervention leaves out of
+  /// `canGoBack()` an entry the page left by `pushState` without user
+  /// activation, and `web_ui` pushes its "flutter" entry over the "origin" one
+  /// at startup and again after each Back. So Back from a pushed route closed
+  /// the page (devicelab, KernelSU 3.3.0).
+  ///
+  /// On the first gesture the current entry becomes an "origin" entry for
+  /// `web_ui` and the "flutter" entry is pushed again, with activation (the
+  /// push also makes KernelSU re-read `canGoBack()`). Back to that origin
+  /// entry then goes forward to the "flutter" entry instead of letting
+  /// `web_ui` push a new one, and sends the framework its `popRoute`, so the
+  /// origin entry stays reachable for every later Back. When the app pops at
+  /// its root, [_exit] stands down and `web_ui` unwinds history as usual.
+  void _installBackEntry() {
+    var armed = false;
+    var forwarding = false;
+    bridge.popStateFilter = (state) {
+      if (_exiting) return false;
+      if (forwarding && _isFlutterEntry(state)) {
+        forwarding = false;
+        hooks.popRoute();
+        return true;
+      }
+      if (armed && !forwarding && _isOriginEntry(state)) {
+        forwarding = true;
+        bridge.historyGo(1);
+        return true;
+      }
+      return false;
+    };
+    _subscriptions.add(
+      bridge.userActivations.listen((_) {
+        if (armed || _exiting) return;
+        final state = bridge.historyState;
+        if (!_isFlutterEntry(state)) return;
+        bridge
+          ..historyReplaceState(const {'origin': true, 'state': null})
+          ..historyPushState(state);
+        armed = true;
+      }),
+    );
+  }
+
+  // web_ui's SingleEntryBrowserHistory states.
+  static bool _isOriginEntry(Object? s) => s is Map && s['origin'] == true;
+  static bool _isFlutterEntry(Object? s) => s is Map && s['flutter'] == true;
 
   bool _exitInstalled = false;
 
@@ -79,9 +128,15 @@ final class WebUiEmbedding {
       s.cancel();
     }
     _subscriptions.clear();
+    if (host.isWebUi && host.kind != WebUiHostKind.webuix) {
+      bridge.popStateFilter = null;
+    }
   }
 
+  bool _exiting = false;
+
   Future<void> _exit() async {
+    _exiting = true;
     // Asked now, not from the probe: the globals may have come later.
     if (bridge.ksuHas('exit')) {
       bridge.callKsu('exit');

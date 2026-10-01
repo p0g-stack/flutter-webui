@@ -110,6 +110,49 @@ void main() {
     expect(hooks.popRoutes, 1);
   });
 
+  test('KernelSU: Back stays reachable after the first gesture', () async {
+    final (bridge, hooks, _) = install(FakeBridge.kernelsu());
+    const origin = {'origin': true, 'state': null};
+    const flutter = {'flutter': true};
+    // Before any gesture web_ui's entries are left alone.
+    expect(bridge.popState(origin), isFalse);
+    bridge.historyState = flutter;
+    bridge.activationController.add(null);
+    expect(bridge.historyWrites, [('replace', origin), ('push', flutter)]);
+    bridge.activationController.add(null);
+    expect(bridge.historyWrites, hasLength(2), reason: 'armed once');
+    // Back, twice: forward again to the flutter entry, then popRoute.
+    for (var i = 1; i <= 2; i++) {
+      expect(bridge.popState(origin), isTrue);
+      expect(bridge.historyGos, List.filled(i, 1));
+      expect(hooks.popRoutes, i - 1);
+      expect(bridge.popState(flutter), isTrue);
+      expect(hooks.popRoutes, i);
+    }
+    expect(bridge.historyWrites, hasLength(2), reason: 'nothing pushed');
+    // Popped at the root: web_ui unwinds history itself.
+    await hooks.exitHandler!();
+    expect(bridge.popState(origin), isFalse);
+    expect(bridge.historyGos, hasLength(2));
+  });
+
+  test('KernelSU: an app on its own history entries is left alone', () {
+    final (bridge, _, _) = install(FakeBridge.kernelsu());
+    bridge.historyState = {'serialCount': 1, 'state': null};
+    bridge.activationController.add(null);
+    expect(bridge.historyWrites, isEmpty);
+    expect(bridge.popState({'serialCount': 0, 'state': null}), isFalse);
+  });
+
+  test('WebUI X and a browser tab leave history alone', () {
+    for (final b in [FakeBridge.webuix(), FakeBridge.browser()]) {
+      final (bridge, _, _) = install(b);
+      bridge.activationController.add(null);
+      expect(bridge.historyWrites, isEmpty);
+      expect(bridge.popStateFilter, isNull);
+    }
+  });
+
   test('dispose stops listening', () {
     final (bridge, hooks, embedding) = install(FakeBridge.webuix());
     embedding.dispose();
