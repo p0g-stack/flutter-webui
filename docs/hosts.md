@@ -82,15 +82,30 @@ KernelSU 3.3.0, Android 15 x86_64 emulator, WebView 124.0.6367.219
 - The page loads at `https://mui.kernelsu.org/index.html` and draws edge to
   edge; `--safe-area-inset-top` is 24px.
 - Home: `visibilitychange` to hidden, return: visible; no `focus`/`blur`.
-  Timers stop while hidden. Back at the root route closes the WebUI.
+  While hidden, timers throttle to about one tick a second and fetches
+  complete. Back at the root route closes the WebUI.
 - Root channel: `ksu.exec` of `root start` returns in 206 ms, `session.json`
   is served 62 ms later, the WebSocket hello reports uid 0. The channel runs
   as `u:r:ksu:s0` through the glibc loader. Page `fetch` and WebSocket to
   127.0.0.1 work on this WebView (older than Local Network Access).
+- The WebView's sockets belong to the manager's own uid (10209 here; seen
+  from root in `/proc/net/tcp`), not a sandbox uid.
 - First frame (software GL, relative only): warm 1309 ms (2357 ms with 0.1.0,
   which called `ksu.moduleInfo()` at start).
 
+WebUI X Portable with root, same emulator (runs 36833152967, 36833446476):
+
+- The root channel starts through `ksu.exec`; the page reads `session.json`
+  and gets the hello with uid 0.
+- While paused (`pauseTimers()`), `setInterval` stops completely but fetch
+  callbacks still run. Sockets belong to its uid (10210).
+- Back at the root route leaves the activity open (an exit-confirm dialog is
+  suspected; open below).
+
 ## Open (devicelab)
+
+- WebUI X: why Back at the root route leaves the activity open with
+  `exitConfirm: false` and `webui.exit()` called.
 
 
 - `visibilityState`, `focus`, `blur` on Next and WebUI X, and on KernelSU for
