@@ -13,7 +13,7 @@ import 'dart:typed_data';
 const int protocolVersion = 1;
 
 /// Version of the channel executable, compared by the page on connect.
-const String channelVersion = '0.2.1';
+const String channelVersion = '0.2.2';
 
 /// The WebSocket path, relative to `ws://127.0.0.1:<port>`.
 const String channelPath = '/v1';

@@ -71,7 +71,7 @@ It prints one line, the session of a live channel of this version, and exits
 stdout.
 
 ```json
-{"protocol": 1, "version": "0.2.1", "port": 41234,
+{"protocol": 1, "version": "0.2.2", "port": 41234,
  "token": "<43 chars, base64url, 256 random bits>", "pid": 1234,
  "boot": "<boot_id>", "started": "2026-10-01T05:30:00.000Z"}
 ```
@@ -101,9 +101,13 @@ service, so Android does not freeze the app between broadcasts: after
 announcing it runs `am start-foreground-service --user 0 -n
 com.webui.api.<seg>/com.termux.api.RootHelperService` when `pm path` finds
 the app (webui-termux-api webui.7 and later), and at shutdown
-(idle exit or a signal) `am stopservice` for the same component. Both are best
-effort: a missing app or service is logged in `run/root.log` and changes
-nothing else.
+(idle exit or a signal) `am stopservice` for the same component. Right after
+the start it connects to the service's abstract-namespace socket
+`com.webui.api.<seg>/hold` (retrying for up to 10 s while the service comes
+up) and keeps it open, writing nothing; the service stops itself when that
+connection ends, so a channel killed outright (the manager swiped from Recents)
+releases the app too. All of it is best effort: a missing app, service or
+socket is logged in `run/root.log` and changes nothing else.
 
 Page start (`RootChannel.connect()` in `flutter_webui_client`): run
 `root start`, connect to the session it printed, and run it once more if that
@@ -138,7 +142,7 @@ bytes 5..   payload (at least 1 byte)
 On connect the server sends:
 
 ```json
-{"op": "hello", "protocol": 1, "version": "0.2.1", "pid": 1234, "boot": "...", "uid": 0, "moduleDir": "/data/adb/modules/<id>"}
+{"op": "hello", "protocol": 1, "version": "0.2.2", "pid": 1234, "boot": "...", "uid": 0, "moduleDir": "/data/adb/modules/<id>"}
 ```
 
 ### Requests (page -> server)
