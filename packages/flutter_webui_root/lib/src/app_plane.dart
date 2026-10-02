@@ -4,10 +4,10 @@
 import 'dart:async';
 import 'dart:io';
 
-/// The foreground service in the module's app plane app that keeps the app
-/// unfrozen while the root channel runs. The class name inside the
-/// webui-termux-api fork; the package is [appPlanePackage].
-const String appPlaneServiceClass = 'com.termux.api.WebUiForegroundService';
+/// The foreground service in the module's app plane app (webui-termux-api
+/// webui.7 and later) that keeps the app unfrozen while the root channel
+/// runs. The package is [appPlanePackage].
+const String appPlaneServiceClass = 'com.termux.api.RootHelperService';
 
 /// `com.webui.api.<seg>`, `<seg>` being [moduleId] with every character
 /// outside `[A-Za-z0-9_]` replaced by `_`, prefixed with `m` when empty or
@@ -18,8 +18,11 @@ String appPlanePackage(String moduleId) {
   return 'com.webui.api.$seg';
 }
 
-/// Runs `am` with the given arguments.
-typedef AmRunner = Future<ProcessResult> Function(List<String> args);
+/// Runs an Android shell tool (`am`, `pm`) with the given arguments.
+typedef ToolRunner = Future<ProcessResult> Function(
+  String tool,
+  List<String> args,
+);
 
 /// Holds the module's app plane app as a foreground service for the root
 /// channel's lifetime: [hold] when the channel starts, [release] when it
@@ -28,49 +31,70 @@ typedef AmRunner = Future<ProcessResult> Function(List<String> args);
 final class AppPlaneKeepAlive {
   AppPlaneKeepAlive(
     String moduleId, {
-    AmRunner? am,
+    ToolRunner? tools,
     this.timeout = const Duration(seconds: 10),
     this.log = _noLog,
-  }) : component = '${appPlanePackage(moduleId)}/$appPlaneServiceClass',
-       _am = am ?? _systemAm;
+  }) : package = appPlanePackage(moduleId),
+       _tools = tools ?? _systemTools;
+
+  final String package;
+  final Duration timeout;
+  final ToolRunner? _tools;
+  final void Function(String) log;
+  Future<bool>? _held;
 
   /// `<package>/<class>`, as `am -n` takes it.
-  final String component;
-  final Duration timeout;
-  final AmRunner? _am;
-  final void Function(String) log;
-  Future<void>? _held;
+  String get component => '$package/$appPlaneServiceClass';
 
-  /// The `am` of an Android system, or null elsewhere.
-  static AmRunner? get _systemAm {
-    const am = '/system/bin/am';
-    if (!File(am).existsSync()) return null;
-    return (args) => Process.run(am, args);
+  /// The tools of an Android system, or null elsewhere.
+  static ToolRunner? get _systemTools {
+    if (!File('/system/bin/am').existsSync()) return null;
+    return (tool, args) => Process.run('/system/bin/$tool', args);
   }
 
-  Future<void> hold() => _held ??= _run('start-foreground-service');
+  /// Starts the service when the app is installed.
+  Future<void> hold() => _held ??= _hold();
 
-  /// Stops the service if [hold] ran, after it finished.
+  Future<bool> _hold() async {
+    final found = await _run('pm', ['path', package]);
+    if (found == null || !'${found.stdout}'.contains('package:')) {
+      log('$package not installed; not holding it');
+      return false;
+    }
+    await _run('am', [
+      'start-foreground-service',
+      '--user',
+      '0',
+      '-n',
+      component,
+    ]);
+    return true;
+  }
+
+  /// Stops the service if [hold] started it, after it finished.
   Future<void> release() async {
     final held = _held;
-    if (held == null) return;
-    await held;
-    await _run('stopservice');
+    if (held == null || !await held) return;
+    await _run('am', ['stopservice', '--user', '0', '-n', component]);
   }
 
-  Future<void> _run(String command) async {
-    final am = _am;
-    if (am == null) return;
-    final args = [command, '--user', '0', '-n', component];
+  /// The result, or null after logging a failure.
+  Future<ProcessResult?> _run(String tool, List<String> args) async {
+    final tools = _tools;
+    if (tools == null) return null;
+    final what = '$tool ${args.join(' ')}';
     try {
-      final result = await am(args).timeout(timeout);
-      // `am` reports a missing app or service on stdout with status 0.
+      final result = await tools(tool, args).timeout(timeout);
+      // `am` reports a missing service on stdout with status 0.
       final out = '${result.stdout}${result.stderr}'.trim();
       if (result.exitCode != 0 || out.contains('Error')) {
-        log('am ${args.join(' ')}: exit ${result.exitCode} $out');
+        log('$what: exit ${result.exitCode} $out');
+        if (result.exitCode != 0) return null;
       }
+      return result;
     } on Object catch (e) {
-      log('am ${args.join(' ')}: $e');
+      log('$what: $e');
+      return null;
     }
   }
 }

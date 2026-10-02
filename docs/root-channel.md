@@ -99,7 +99,8 @@ While it runs, the channel holds the module's app plane app
 (`com.webui.api.<seg>`, `<seg>` as in `webui_app_plane`) as a foreground
 service, so Android does not freeze the app between broadcasts: after
 announcing it runs `am start-foreground-service --user 0 -n
-com.webui.api.<seg>/com.termux.api.WebUiForegroundService`, and at shutdown
+com.webui.api.<seg>/com.termux.api.RootHelperService` when `pm path` finds
+the app (webui-termux-api webui.7 and later), and at shutdown
 (idle exit or a signal) `am stopservice` for the same component. Both are best
 effort: a missing app or service is logged in `run/root.log` and changes
 nothing else.
