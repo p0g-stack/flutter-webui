@@ -91,7 +91,7 @@ Future<void> main(List<String> arguments) async {
     case 'start':
       await _start(command, runDir, tempDir, config, log);
     case 'serve':
-      await _serve(command, moduleDir, runDir, config, log);
+      await _serve(command, moduleId, moduleDir, runDir, config, log);
   }
 }
 
@@ -137,6 +137,7 @@ Future<void> _start(
 
 Future<void> _serve(
   ArgResults command,
+  String moduleId,
   Directory moduleDir,
   Directory runDir,
   ModuleConfig config,
@@ -180,6 +181,10 @@ Future<void> _serve(
     // The launcher reads one line and goes away; nothing else is written.
     await stdout.close();
   }
+  // Keeps the module's app unfrozen while the channel runs; after the
+  // announce so the page does not wait on `am`.
+  final keepAlive = AppPlaneKeepAlive(moduleId, log: log);
+  unawaited(keepAlive.hold());
   for (final signal in [
     ProcessSignal.sigterm,
     ProcessSignal.sigint,
@@ -192,6 +197,7 @@ Future<void> _serve(
     });
   }
   await server.done;
+  await keepAlive.release();
   await lock.release();
   exit(0);
 }

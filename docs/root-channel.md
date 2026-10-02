@@ -71,7 +71,7 @@ It prints one line, the session of a live channel of this version, and exits
 stdout.
 
 ```json
-{"protocol": 1, "version": "0.2.0", "port": 41234,
+{"protocol": 1, "version": "0.2.1", "port": 41234,
  "token": "<43 chars, base64url, 256 random bits>", "pid": 1234,
  "boot": "<boot_id>", "started": "2026-10-01T05:30:00.000Z"}
 ```
@@ -94,6 +94,15 @@ Under `run/start.lock`, `root start`:
 On KernelSU-family managers `exec` blocks the page thread while the command
 runs: tens of milliseconds for a live channel, a few hundred for a first
 start. Nothing else is needed to find the channel: no file is fetched.
+
+While it runs, the channel holds the module's app plane app
+(`com.webui.api.<seg>`, `<seg>` as in `webui_app_plane`) as a foreground
+service, so Android does not freeze the app between broadcasts: after
+announcing it runs `am start-foreground-service --user 0 -n
+com.webui.api.<seg>/com.termux.api.WebUiForegroundService`, and at shutdown
+(idle exit or a signal) `am stopservice` for the same component. Both are best
+effort: a missing app or service is logged in `run/root.log` and changes
+nothing else.
 
 Page start (`RootChannel.connect()` in `flutter_webui_client`): run
 `root start`, connect to the session it printed, and run it once more if that
@@ -128,7 +137,7 @@ bytes 5..   payload (at least 1 byte)
 On connect the server sends:
 
 ```json
-{"op": "hello", "protocol": 1, "version": "0.2.0", "pid": 1234, "boot": "...", "uid": 0, "moduleDir": "/data/adb/modules/<id>"}
+{"op": "hello", "protocol": 1, "version": "0.2.1", "pid": 1234, "boot": "...", "uid": 0, "moduleDir": "/data/adb/modules/<id>"}
 ```
 
 ### Requests (page -> server)
