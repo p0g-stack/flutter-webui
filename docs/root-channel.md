@@ -71,7 +71,7 @@ It prints one line, the session of a live channel of this version, and exits
 stdout.
 
 ```json
-{"protocol": 1, "version": "0.2.2", "port": 41234,
+{"protocol": 1, "version": "0.2.3", "port": 41234,
  "token": "<43 chars, base64url, 256 random bits>", "pid": 1234,
  "boot": "<boot_id>", "started": "2026-10-01T05:30:00.000Z"}
 ```
@@ -87,8 +87,13 @@ Under `run/start.lock`, `root start`:
    channel's), then starts `root serve` detached: its own session, stdin from
    `/dev/null`, stderr to `run/root.log`, so neither the launcher exiting nor
    the manager closing its shell (WebUI X `killShellWhenBackground`) ends it.
-   The channel takes `run/lock` (waiting up to 10 s for one that is shutting
-   down), listens, writes `webui.session`, and prints the session on stdout;
+   The channel first moves itself into the root cgroups
+   (`/sys/fs/cgroup/cgroup.procs`, and `/dev/freezer/cgroup.procs` where it
+   exists), out of the manager's: it is born there because the manager ran
+   `root start`, and Android freezes that cgroup, with every process in it,
+   when the manager is cached. `run/root.log` records `/proc/<pid>/cgroup`
+   before and after. The channel takes `run/lock` (waiting up to 10 s for one
+   that is shutting down), listens, writes `webui.session`, and prints the session on stdout;
    the launcher passes it on (15 s cap).
 
 On KernelSU-family managers `exec` blocks the page thread while the command
@@ -142,7 +147,7 @@ bytes 5..   payload (at least 1 byte)
 On connect the server sends:
 
 ```json
-{"op": "hello", "protocol": 1, "version": "0.2.2", "pid": 1234, "boot": "...", "uid": 0, "moduleDir": "/data/adb/modules/<id>"}
+{"op": "hello", "protocol": 1, "version": "0.2.3", "pid": 1234, "boot": "...", "uid": 0, "moduleDir": "/data/adb/modules/<id>"}
 ```
 
 ### Requests (page -> server)

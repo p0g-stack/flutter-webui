@@ -1,6 +1,6 @@
 name: flutter_webui_root
 description: The flutter-webui root channel. A WebSocket on 127.0.0.1 that carries bytes between a WebUI page and root, and launches root processes with their stdio as streams.
-version: 0.2.2
+version: 0.2.3
 publish_to: none
 resolution: workspace
 

@@ -162,6 +162,9 @@ Future<void> _serve(
   } on FileSystemException {
     // Started by hand, not through the launcher.
   }
+  // Out of the manager's cgroup before starting anything: processes the
+  // channel starts inherit it, and Android freezes it with the manager.
+  leaveAppCgroup(pid).forEach(log);
   final RootChannelServer server;
   try {
     server = await RootChannelServer.start(

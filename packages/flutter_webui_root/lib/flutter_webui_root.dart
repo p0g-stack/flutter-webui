@@ -8,6 +8,7 @@ export 'protocol.dart';
 export 'src/server.dart' show ChannelLimits, ChannelTimings, RootChannelServer;
 export 'src/app_plane.dart'
     show AppPlaneKeepAlive, ToolRunner, appPlanePackage, appPlaneServiceClass;
+export 'src/cgroup.dart' show leaveAppCgroup, rootCgroupProcs;
 export 'src/launcher.dart'
     show ChannelLauncher, ChannelSpawner, LauncherException;
 export 'src/run_state.dart'
