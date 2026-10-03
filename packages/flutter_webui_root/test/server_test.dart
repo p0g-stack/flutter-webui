@@ -218,6 +218,16 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 300));
       expect(File('/proc/$sleeper/stat').existsSync(), isTrue);
       Process.killPid(sleeper, ProcessSignal.sigkill);
+      // Its wrapper shell then writes the exit file into run/proc; wait for
+      // it so tearDown does not delete the module directory under it.
+      final proc = Directory('${runDir.path}/proc');
+      bool recorded() => proc.listSync().any(
+        (f) => f.path.endsWith('.exit') && f.path.contains('-1.'),
+      );
+      for (var i = 0; i < 100 && !recorded(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      expect(recorded(), isTrue);
     },
   );
 
