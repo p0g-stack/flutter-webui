@@ -1,0 +1,103 @@
+name: web-sdk-release
+
+# Builds the patched Flutter web SDK (web_ui/patches on the pinned release)
+# and publishes it as a GitHub release, so flutter_p0g downloads it by sha256
+# instead of rebuilding it. One release per flutter-webui commit that changes
+# web_ui/ (or this workflow); a commit that already has one is skipped.
+#
+# Tag:    web-sdk-<flutter version>-<engine commit, 7>-<flutter-webui commit, 7>
+# Assets: flutter-webui-web-sdk.tar.xz         flutter_web_sdk/ and
+#                                             pkg/sky_engine/lib/ui_web/, to
+#                                             unpack over <flutter>/bin/cache
+#         flutter-webui-web-sdk.tar.xz.sha256  `sha256sum` line
+#         manifest.json                        pins: Flutter, engine,
+#                                             flutter-webui commit, web_ui tree,
+#                                             patches, asset sha256
+# The tarball is reproducible (sorted, mtime 0, owner 0, xz): the same pins
+# give the same sha256 on any machine.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web_ui/**'
+      - '.github/workflows/web-sdk-release.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: web-sdk-release-${{ github.sha }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ASSET: flutter-webui-web-sdk.tar.xz
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag
+        id: tag
+        run: |
+          set -euo pipefail
+          version="$(cat web_ui/VERSION)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "short=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+          if gh release list --limit 200 --json tagName -q '.[].tagName' \
+              | grep -q -- "-${GITHUB_SHA:0:7}\$"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::a web SDK release already exists for ${GITHUB_SHA:0:7}"
+          fi
+      - uses: subosito/flutter-action@v2
+        if: steps.tag.outputs.skip != 'true'
+        with:
+          flutter-version: ${{ steps.tag.outputs.version }}
+          channel: stable
+      - name: Build
+        if: steps.tag.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          flutter precache --web
+          flutter pub get
+          dart run web_ui/tool/build_web_sdk.dart --flutter "$FLUTTER_ROOT" --out "$RUNNER_TEMP/sdk"
+      - name: Pack
+        if: steps.tag.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          mkdir dist
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+            -C "$RUNNER_TEMP/sdk" -cf - flutter_web_sdk pkg | xz -T1 -9 > "dist/$ASSET"
+          (cd dist && sha256sum "$ASSET" > "$ASSET.sha256")
+          engine="$(cat "$FLUTTER_ROOT/bin/internal/engine.version")"
+          framework="$(flutter --version --machine | jq -r .frameworkRevision)"
+          tag="web-sdk-${{ steps.tag.outputs.version }}-${engine:0:7}-${{ steps.tag.outputs.short }}"
+          jq -n \
+            --arg flutter "${{ steps.tag.outputs.version }}" \
+            --arg framework "$framework" \
+            --arg engine "$engine" \
+            --arg commit "$GITHUB_SHA" \
+            --arg tree "$(git rev-parse HEAD:web_ui)" \
+            --arg asset "$ASSET" \
+            --arg sha256 "$(cut -d' ' -f1 "dist/$ASSET.sha256")" \
+            --argjson patches "$(ls web_ui/patches | jq -R . | jq -s .)" \
+            '{flutter: $flutter, flutterFramework: $framework, engine: $engine,
+              flutterWebuiCommit: $commit, webUiTree: $tree, patches: $patches,
+              asset: $asset, sha256: $sha256}' > dist/manifest.json
+          cat dist/manifest.json
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+      - name: Release
+        if: steps.tag.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          sha="$(cut -d' ' -f1 "dist/$ASSET.sha256")"
+          {
+            echo "Patched Flutter web SDK: flutter-webui \`web_ui/patches\` on Flutter $(jq -r .flutter dist/manifest.json) (engine \`$(jq -r .engine dist/manifest.json)\`), built at flutter-webui \`$GITHUB_SHA\`."
+            echo
+            echo "Unpack \`$ASSET\` over \`<flutter>/bin/cache\` (it holds \`flutter_web_sdk/\` and \`pkg/sky_engine/lib/ui_web/\`)."
+            echo
+            echo "- sha256: \`$sha\`"
+            echo "- web_ui tree: \`$(jq -r .webUiTree dist/manifest.json)\`"
+          } > dist/notes.md
+          gh release create "$TAG" "dist/$ASSET" "dist/$ASSET.sha256" dist/manifest.json \
+            --target "$GITHUB_SHA" --title "$TAG" --notes-file dist/notes.md

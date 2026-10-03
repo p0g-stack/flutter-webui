@@ -66,6 +66,11 @@ An app needs four things, which `flutter_p0g` provides (`create .` adds the
    `web_ui` sources and rebuilds the platform kernels and DDC modules with the
    Dart SDK's own tools (about 20 s, no engine build). Overlay `<dir>` on
    `<flutter>/bin/cache`.
+   CI publishes the same build for every commit that changes `web_ui/`, as a
+   release tagged `web-sdk-<flutter>-<engine 7>-<flutter-webui 7>` with
+   `flutter-webui-web-sdk.tar.xz` (unpack over `bin/cache`), its `.sha256` and
+   a `manifest.json` of the pins (`.github/workflows/web-sdk-release.yaml`).
+   The tarball is reproducible, so a local build gives the same sha256.
 2. **`flutter_webui` as a dependency of the WebUI build.** Its web plugin
    registrant installs the handlers before `main()`; app code stays stock. It
    compiles only against the patched SDK, so apps never depend on it
