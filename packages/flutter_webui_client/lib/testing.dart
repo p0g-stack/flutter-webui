@@ -76,6 +76,30 @@ class FakeBridge implements HostBridge {
     insets: const Insets(top: 30, bottom: 20),
   );
 
+  /// WebUI X v608: no `WX_*` events; `document.addMXEventListener` back
+  /// events, shortcuts and the package list.
+  factory FakeBridge.webuix608() =>
+      FakeBridge(
+          ksu: const {
+            'exec',
+            'spawn',
+            'toast',
+            'fullScreen',
+            'moduleInfo',
+            'listPackages',
+            'getPackagesInfo',
+            'mmrl',
+          },
+          webui: const {'exit', 'startActivity', 'createShortcut'},
+          info: const {
+            'id': 'demo-mod',
+            'moduleDir': '/data/adb/modules/demo-mod',
+          },
+          insets: const Insets(top: 30, bottom: 20),
+        )
+        ..mxListener = true
+        ..webuiProperties['hasShortcut'] = false;
+
   /// A browser tab.
   factory FakeBridge.browser() => FakeBridge();
 
@@ -111,14 +135,30 @@ class FakeBridge implements HostBridge {
   @override
   Object? callKsu(String name, [List<Object?> args = const []]) {
     calls.add('ksu.$name(${args.join(',')})');
-    return null;
+    final answer = ksuAnswers[name];
+    return answer is Function ? Function.apply(answer, args) : answer;
   }
 
   @override
   Object? callWebui(String name, [List<Object?> args = const []]) {
     calls.add('webui.$name(${args.join(',')})');
-    return null;
+    final answer = webuiAnswers[name];
+    return answer is Function ? Function.apply(answer, args) : answer;
   }
+
+  /// What `webui[name]()` returns, or a function computing it from the
+  /// arguments; null when unset.
+  final Map<String, Object?> webuiAnswers = {};
+
+  /// `webui` properties (values, not functions).
+  final Map<String, Object?> webuiProperties = {};
+
+  @override
+  Object? webuiProperty(String name) => webuiProperties[name];
+
+  /// What `ksu[name]()` returns, or a function computing it from the
+  /// arguments; null when unset.
+  final Map<String, Object?> ksuAnswers = {};
 
   @override
   Map<String, Object?>? moduleInfo() {
@@ -143,6 +183,29 @@ class FakeBridge implements HostBridge {
 
   @override
   Stream<HostEvent> get events => eventController.stream;
+
+  /// Whether `document.addMXEventListener` exists (WebUI X v608).
+  bool mxListener = false;
+
+  /// The names [mxEvents] registered, in order.
+  final List<String> mxRegistered = [];
+
+  final StreamController<HostEvent> mxController = StreamController.broadcast(
+    sync: true,
+  );
+
+  @override
+  Stream<HostEvent> mxEvents(List<String> names) {
+    if (!mxListener) return const Stream.empty();
+    mxRegistered.addAll(names);
+    return mxController.stream.where((e) => names.contains(e.type));
+  }
+
+  /// Delivers the MX event [name] with [payload] to listeners that
+  /// registered it.
+  void emitMx(String name, [Map<String, Object?> payload = const {}]) {
+    if (mxRegistered.contains(name)) mxController.add(HostEvent(name, payload));
+  }
 
   @override
   Insets? cssInsets() => insets;

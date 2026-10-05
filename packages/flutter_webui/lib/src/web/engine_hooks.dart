@@ -55,6 +55,16 @@ final class UiWebHooks implements EngineHooks {
     const JSONMethodCodec().encodeMethodCall(const MethodCall('popRoute')),
     (_) {},
   );
+
+  @override
+  void backGesture(String method, [Map<String, Object?>? arguments]) =>
+      ui.channelBuffers.push(
+        SystemChannels.backGesture.name,
+        const StandardMethodCodec().encodeMethodCall(
+          MethodCall(method, arguments),
+        ),
+        (_) {},
+      );
 }
 
 final class _EngineClipboard implements ui_web.HostClipboard {

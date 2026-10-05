@@ -24,6 +24,13 @@ abstract interface class EngineHooks {
 
   /// Delivers a `popRoute` to the framework, as a platform Back does.
   void popRoute();
+
+  /// Delivers [method] on `flutter/backgesture` to the framework, as
+  /// Android's embedding does for a predictive back gesture:
+  /// `startBackGesture` and `updateBackGestureProgress` with
+  /// `{touchOffset: [x, y]?, progress, swipeEdge}`, then `commitBackGesture`
+  /// or `cancelBackGesture`.
+  void backGesture(String method, [Map<String, Object?>? arguments]);
 }
 
 /// A text clipboard (the engine's `HostClipboard`).
@@ -65,6 +72,7 @@ abstract final class WebUiClipboard {
 /// | safe-area padding | `insets.css` variables (edge-to-edge requested) | injected variables; `WX_ON_INSETS` (v438) |
 /// | `AppLifecycleState` | page visibility (`web_ui` as is) | `WX_ON_PAUSE` = hidden until `WX_ON_RESUME` (v438) |
 /// | back | WebView history, kept reachable (`_installBackEntry`) | same; `WX_ON_BACK` = `history.back()` (v438 `backInterceptor: "javascript"`) |
+/// | predictive back | none (the gesture commits as Back) | v608 swipe events: the route follows the swipe (`_installPredictiveBack`) |
 /// | `SystemNavigator.pop` | `ksu.exit()` or `webui.exit()`, else history unwinds so the host's Back closes the page | same |
 /// | brightness | the manager's `colors.css` background, else `prefers-color-scheme` | same, else `$<id>.isDarkMode()` |
 /// | clipboard | [clipboard], or [WebUiClipboard.use]'s | same |
@@ -96,6 +104,65 @@ final class WebUiEmbedding {
     _installInsets();
     _installBrightness();
     _installBackEntry();
+    _installPredictiveBack();
+  }
+
+  /// The WebUI X back events [_installPredictiveBack] listens for.
+  static const List<String> mxBackEvents = [
+    'backStarted',
+    'backProgressed',
+    'backCancelled',
+    'backPressed',
+  ];
+
+  /// Whether a predictive back gesture started and has not ended.
+  bool _gestureActive = false;
+
+  /// WebUI X v608 forwards Android's predictive back callback to the page in
+  /// every `backInterceptor` mode: `backStarted`, `backProgressed` and
+  /// `backCancelled` reach `document.addMXEventListener` listeners whatever
+  /// the mode, and only the commit differs. In `"native"` mode the commit is
+  /// the activity's Back (WebView history, then close), which
+  /// [_installBackEntry] turns into a `popRoute`; [_popRoute] hands that to
+  /// the framework as `commitBackGesture` instead, so the route finishes the
+  /// transition the swipe began. In the `"javascript"` modes the commit at
+  /// the root (or always, in `"javascript-full"`) is `backPressed`, which
+  /// goes the same way. Hosts without the listener (KernelSU, Next, APatch,
+  /// v438) send nothing and keep the plain Back.
+  void _installPredictiveBack() {
+    _subscriptions.add(
+      bridge.mxEvents(mxBackEvents).listen((event) {
+        switch (event.type) {
+          case 'backStarted':
+            _gestureActive = true;
+            hooks.backGesture('startBackGesture', _backEventArguments(event));
+          case 'backProgressed':
+            if (!_gestureActive) return;
+            hooks.backGesture(
+              'updateBackGestureProgress',
+              _backEventArguments(event),
+            );
+          case 'backCancelled':
+            if (!_gestureActive) return;
+            _gestureActive = false;
+            hooks.backGesture('cancelBackGesture');
+          case 'backPressed':
+            _popRoute();
+        }
+      }),
+    );
+  }
+
+  /// A platform Back for the framework: the commit of a gesture in progress,
+  /// else a `popRoute`. With no route following the gesture, the framework
+  /// treats the commit as a `popRoute` itself.
+  void _popRoute() {
+    if (_gestureActive) {
+      _gestureActive = false;
+      hooks.backGesture('commitBackGesture');
+    } else {
+      hooks.popRoute();
+    }
   }
 
   /// KernelSU-family Back, and WebUI X's with `backInterceptor: "native"`, is
@@ -126,7 +193,7 @@ final class WebUiEmbedding {
       }
       if (forwarding && _isFlutterEntry(state)) {
         forwarding = false;
-        hooks.popRoute();
+        _popRoute();
         return true;
       }
       if (_backArmed && !forwarding && _isOriginEntry(state)) {
@@ -231,7 +298,7 @@ final class WebUiEmbedding {
         if (bridge.historyLength > 1) {
           bridge.historyBack();
         } else {
-          hooks.popRoute();
+          _popRoute();
         }
       case 'WX_ON_INSETS':
         final insets = _insetsFrom(event.data);
@@ -267,6 +334,28 @@ final class WebUiEmbedding {
     hooks.setBrightness(dark ? HostBrightness.dark : HostBrightness.light);
     return true;
   }
+}
+
+/// `flutter/backgesture` arguments from a WebUI X back event: Android's
+/// `BackEventCompat` fields, as Flutter's Android embedding sends them. An
+/// edge other than left (0) or right (1), such as `EDGE_NONE` from a back
+/// button, is reported as a button press (no touch offset).
+Map<String, Object?> _backEventArguments(HostEvent event) {
+  final data = event.data is Map ? event.data! as Map : const {};
+  double? number(String key) {
+    final v = data[key];
+    return v is num ? v.toDouble() : null;
+  }
+
+  final edge = data['swipeEdge'];
+  final x = number('touchX');
+  final y = number('touchY');
+  final touch = (edge == 0 || edge == 1) && x != null && y != null;
+  return {
+    'touchOffset': touch ? [x, y] : null,
+    'progress': (number('progress') ?? 0).clamp(0.0, 1.0),
+    'swipeEdge': edge == 1 ? 1 : 0,
+  };
 }
 
 Insets? _insetsFrom(Object? data) {

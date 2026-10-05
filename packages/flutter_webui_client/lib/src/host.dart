@@ -48,7 +48,11 @@ final class WebUiHost {
   ];
 
   /// The WebUI X `webui` methods the probe looks for.
-  static const List<String> probedWebuiMethods = ['exit', 'startActivity'];
+  static const List<String> probedWebuiMethods = [
+    'exit',
+    'startActivity',
+    'createShortcut',
+  ];
 
   /// Probes [bridge].
   static WebUiHost detect(HostBridge bridge) {

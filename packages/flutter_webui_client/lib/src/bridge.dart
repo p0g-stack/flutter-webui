@@ -88,6 +88,10 @@ abstract interface class HostBridge {
   /// Calls `webui[name](...args)` and returns its result.
   Object? callWebui(String name, [List<Object?> args = const []]);
 
+  /// `webui[name]` when it is a value, not a function (WebUI X reads its
+  /// properties, such as `hasShortcut`, when the page loads); null if absent.
+  Object? webuiProperty(String name);
+
   /// `ksu.moduleInfo()`, parsed, or null if absent or unparseable.
   Map<String, Object?>? moduleInfo();
 
@@ -103,6 +107,13 @@ abstract interface class HostBridge {
 
   /// WebUI X `WX_*` events.
   Stream<HostEvent> get events;
+
+  /// WebUI X `document.addMXEventListener` events named [names] (v608 and
+  /// later define it after `DOMContentLoaded`), as [HostEvent]s typed by
+  /// name with the event's payload fields as a map. Empty where the host has
+  /// no such listener. Each call registers its own listeners; WebUI X keeps
+  /// one per event name on `document`, so call it once per name.
+  Stream<HostEvent> mxEvents(List<String> names);
 
   /// Safe-area insets from the host's CSS variables, or null if none is set.
   Insets? cssInsets();

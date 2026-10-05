@@ -1,6 +1,7 @@
 // Copyright 2026 The p0g-stack authors.
 // SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
 
+import '../extras.dart';
 import '../host.dart';
 import '../root_channel.dart';
 import 'js_bridge.dart';
@@ -13,6 +14,12 @@ abstract final class WebUi {
 
   /// What the host offers, probed once.
   static final WebUiHost host = WebUiHost.detect(bridge);
+
+  /// Home-screen shortcut to the module, where the host can pin one.
+  static final ModuleShortcut shortcut = ModuleShortcut(bridge);
+
+  /// The manager's package list, where it has one.
+  static final HostPackages packages = HostPackages(bridge);
 
   static Future<RootChannel>? _channel;
 

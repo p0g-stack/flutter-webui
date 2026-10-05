@@ -11,6 +11,7 @@
 library;
 
 export 'src/bridge.dart';
+export 'src/extras.dart';
 export 'src/host.dart';
 export 'src/quote.dart';
 export 'src/root_channel.dart';

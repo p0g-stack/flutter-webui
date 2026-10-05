@@ -42,6 +42,13 @@ class FakeHooks implements EngineHooks {
 
   @override
   void popRoute() => popRoutes++;
+
+  /// `flutter/backgesture` calls, as `(method, arguments)`.
+  final List<(String, Map<String, Object?>?)> backGestures = [];
+
+  @override
+  void backGesture(String method, [Map<String, Object?>? arguments]) =>
+      backGestures.add((method, arguments));
 }
 
 class FakeClipboard implements TextClipboard {

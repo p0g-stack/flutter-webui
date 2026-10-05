@@ -25,6 +25,9 @@ the bootstrap forces single-threaded Skwasm, keeps hash routing and
 | Safe-area padding | `insets.css` (`--safe-area-inset-*`), `ksu.enableEdgeToEdge(true)` | same, `ksu.enableInsets(true)` | none (host adds margins) | injected `--safe-area-inset-*` (v608: CSS only); `WX_ON_INSETS` on v438 (units unverified) |
 | Lifecycle | page visibility, as `web_ui`: `webView.onPause()` hides the page (by Chromium source), also for its own file chooser | page visibility: no `onPause()`, Home hides the window (inferred) | same | page visibility (`onPause()` hides the page; v608 sends no events); v438 also `WX_ON_PAUSE` = hidden until `WX_ON_RESUME` |
 | Back | WebView history: `web_ui`'s entries turn Back into `popRoute`; Chromium leaves entries pushed without a gesture out of `canGoBack()`, so on the first gesture the plugin re-pushes the "flutter" entry and afterwards answers Back by going forward to it (no new push) | same | same | as KernelSU with `backInterceptor: "native"` (WebView history; v608 posts no `WX_ON_BACK`); pages installed with `"javascript"` on v438 still get `WX_ON_BACK` = `history.back()` |
+| Predictive back | none: the gesture commits as a Back | same | same | v608: `document.addMXEventListener` `backStarted` / `backProgressed` / `backCancelled` become `flutter/backgesture` `startBackGesture` / `updateBackGestureProgress` / `cancelBackGesture`, and the Back that commits the swipe becomes `commitBackGesture`, so a route with a predictive transition follows the finger. v608 forwards the progress in every `backInterceptor` mode (the callback is registered unconditionally, `enableOnBackInvokedCallback="true"`); only the commit differs: `"native"` = history as on KernelSU, `"javascript"` = history, then `backPressed` at the root. v438: no `addMXEventListener` (review of 2026-10-05) |
+| Home-screen shortcut | none (the manager's own module menu) | same | same | `WebUi.shortcut`: `webui.createShortcut()` and `webui.hasShortcut` where present (v608); unsupported elsewhere |
+| Package list | `WebUi.packages`: `ksu.listPackages` / `getPackagesInfo`, icons at `ksu://icon/<pkg>`; a fast path, the root channel stays the full list | same | same | same on v608 (Play builds list launchable apps only; the official build lists all; `kernelsu.permission.PACKAGES` exists but v608 does not check it); none on v438 |
 | `SystemNavigator.pop` at the root | history restored, then `ksu.exit()` | history restored; no exit method, the next Back closes | same | `webui.exit()` where present (v438, v608); without it (upstream master) as Next |
 | Brightness | the luminance of `--background` in `/internal/colors.css` when served (Monet colour modes 3 to 6, or the Material UI), which carries a forced manager theme; else `prefers-color-scheme` (the system's: forced light or dark without Monet does not reach the page) | `colors.css` (Android 12+), which Next builds from the system night mode: the system's either way | `prefers-color-scheme` | `colors.css` as KernelSU (still served on v608), else `$<id>.isDarkMode()` |
 | Clipboard | `navigator.clipboard`: write is auto-granted (fallback `execCommand('copy')`); programmatic read is always denied by WebView, user paste in a field works (a plugin can install another clipboard with `WebUiClipboard.use`, such as `clipboard_webui`'s) | same | same | same (its permission handler never sees clipboard read) |
@@ -70,7 +73,9 @@ WebUI X `webroot/config.json`:
   ignore the key.
 - `backInterceptor: "native"`: Back is WebView history, as on the KernelSU
   family, on every version. `"javascript"` worked on v438 only (`WX_ON_BACK`);
-  on v608 it leaves Back dead whenever `canGoBack()` is false.
+  on v608 it leaves Back dead whenever `canGoBack()` is false, unless the page
+  listens for `backPressed`, which flutter-webui does. Predictive back needs
+  no mode: v608 sends the swipe progress in `"native"` too.
 - `exitConfirm: false`: closing at the root route is closing a tab, no prompt.
 - `windowResize: true` (the default, set so it is not lost) resizes the WebView
   for the keyboard, which is how `web_ui` sees it.
@@ -139,6 +144,11 @@ with KernelSU 3.3.0 and WebUI X v438 unchanged (run 36867884161).
   root with `"native"`; the SHELL overlay with and without the key, and the
   fast `shell-refused` error after Reject (fake host only so far:
   `--host webuix608 [--shell-refused]`).
+- WebUI X v608 predictive back (fake host only: `--events swipe,swipe-cancel`):
+  that the swipe events reach the page in `"native"` mode on Android 14+ and
+  the route follows the finger; that the commit pops one route; that a
+  cancelled swipe leaves the route; a swipe at the root closes the page. Also
+  `WebUi.shortcut.create()` pinning, and `WebUi.packages` on v608 and KernelSU.
 
 
 - `visibilityState`, `focus`, `blur` on Next and WebUI X, and on KernelSU for

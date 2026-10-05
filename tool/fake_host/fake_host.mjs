@@ -24,7 +24,7 @@ const USAGE = `usage: node tool/fake_host/fake_host.mjs --webroot <dir> [options
                         theme; default: none, answered as a missing file)
   --insets T,B|T,R,B,L  safe-area insets in px (default: the profile's; 0 turns them off)
   --module-id <id>      module id (default: the page's webui-module-id meta, else "demo")
-  --events <list>       after the first frame, in order: pause, resume, back, tap[@x:y],
+  --events <list>       after the first frame, in order: pause, resume, back, swipe, swipe-cancel, tap[@x:y],
                         system-dark, system-light (prefers-color-scheme), wait<ms>
                         (e.g. tap,wait500,back,pause,wait2000,resume,back; tap is the viewport centre)
   --shell-refused       ksu.exec returns null and never calls back, as WebUI X v608 without
@@ -66,12 +66,14 @@ const PROFILES = {
     webui: ['exit', 'startActivity'],
     insetsCss: true, insets: [30, 0, 20, 0], missing: '404', wx: true, injectInsets: true,
   },
-  // WebUI X Portable v608 (Play) with backInterceptor "native": no WX_* events, Back is
+  // WebUI X Portable v608 with backInterceptor "native": no WX_* events, Back is
   // WebView.canGoBack() (live), then goBack(), else the activity finishes; webui.exit kept.
+  // document.addMXEventListener after DOMContentLoaded: a predictive back swipe sends
+  // backStarted, backProgressed..., then backCancelled or the native Back (swipe events).
   webuix608: {
-    ksu: ['exec', 'spawn', 'toast', 'fullScreen', 'moduleInfo', 'mmrl'],
-    webui: ['exit'],
-    insetsCss: true, insets: [30, 0, 20, 0], missing: '404', injectInsets: true,
+    ksu: ['exec', 'spawn', 'toast', 'fullScreen', 'moduleInfo', 'listPackages', 'getPackagesInfo', 'mmrl'],
+    webui: ['exit', 'createShortcut'],
+    insetsCss: true, insets: [30, 0, 20, 0], missing: '404', injectInsets: true, mx: true,
   },
   // A browser tab: no globals at all.
   browser: { ksu: [], insetsCss: false, insets: null, missing: '404', bare: true },
@@ -128,7 +130,7 @@ function parseArgs(argv) {
   if (!o.webroot) usage('--webroot is required');
   if (!fs.existsSync(o.webroot)) usage(`no such directory: ${o.webroot}`);
   if (!PROFILES[o.host]) usage(`unknown host ${o.host}`);
-  for (const e of o.events) if (!/^(pause|resume|back|wait\d+|tap(@\d+:\d+)?|system-dark|system-light)$/.test(e)) usage(`unknown event ${e}`);
+  for (const e of o.events) if (!/^(pause|resume|back|swipe|swipe-cancel|wait\d+|tap(@\d+:\d+)?|system-dark|system-light)$/.test(e)) usage(`unknown event ${e}`);
   return o;
 }
 
@@ -183,8 +185,17 @@ function installBridge(cfg) {
     enableEdgeToEdge(on) { call('ksu.enableEdgeToEdge', [on]); },
     enableInsets(on) { call('ksu.enableInsets', [on]); },
     moduleInfo() { call('ksu.moduleInfo', []); return JSON.stringify(cfg.info); },
-    listPackages(type) { call('ksu.listPackages', [type]); return '[]'; },
-    getPackagesInfo(pkgs) { call('ksu.getPackagesInfo', [pkgs]); return '[]'; },
+    listPackages(type) {
+      call('ksu.listPackages', [type]);
+      return JSON.stringify(type === 'system' ? ['android'] : type === 'user' ? ['com.example.app'] : ['android', 'com.example.app']);
+    },
+    getPackagesInfo(pkgs) {
+      call('ksu.getPackagesInfo', [pkgs]);
+      return JSON.stringify(JSON.parse(pkgs).map((p) => ({
+        packageName: p, appLabel: p === 'android' ? 'Android System' : 'Example', versionName: '1.0',
+        versionCode: 1, uid: p === 'android' ? 1000 : 10123, isSystem: p === 'android',
+      })));
+    },
     exit() { call('ksu.exit', []); },
     mmrl() { return true; },
   };
@@ -197,12 +208,32 @@ function installBridge(cfg) {
     const webui = {
       exit() { call('webui.exit', []); },
       startActivity(intent) { call('webui.startActivity', [intent]); },
+      createShortcut() { call('webui.createShortcut', []); return true; },
     };
     const global = '$' + cfg.info.id.replace(/[^a-zA-Z0-9_]/g, '_');
     define(() => {
       window.webui = Object.fromEntries(cfg.webui.map((n) => [n, webui[n]]));
+      // A property, read when the page loads.
+      if (cfg.webui.includes('createShortcut')) window.webui.hasShortcut = false;
       window[global] = { isDarkMode() { call(global + '.isDarkMode', []); return cfg.dark; } };
     });
+  }
+  if (cfg.mx) {
+    // v608's EventEmitterListener script: defined in a DOMContentLoaded listener; one
+    // handler per (element, name); the payload merged into the event object.
+    const handlers = {};
+    document.addEventListener('DOMContentLoaded', () => {
+      Document.prototype.addMXEventListener = function (name, cb) {
+        call('mx.listen', [name]);
+        handlers[name] = cb;
+        return { destroy() { delete handlers[name]; } };
+      };
+    });
+    window.__fakeHostMx = (name, payload) => {
+      const cb = handlers[name];
+      if (cb) cb(Object.assign({ event: name, name, _element: document }, payload));
+      return !!cb;
+    };
   }
   if (cfg.injectInsets && cfg.insets) {
     // WebUI X injects the variables itself rather than through a stylesheet.
@@ -234,7 +265,7 @@ async function main() {
   const hasInsets = insets && insets.some((v) => v !== 0);
   const cfg = {
     ksu: profile.ksu, webui: profile.webui, wx: !!profile.wx, bare: !!profile.bare, dark: o.dark,
-    injectInsets: !!profile.injectInsets, shellRefused: !!o.shellRefused,
+    injectInsets: !!profile.injectInsets, shellRefused: !!o.shellRefused, mx: !!profile.mx,
     info: { id: moduleId, name: moduleId, moduleDir: `/data/adb/modules/${moduleId}` },
     insets: hasInsets ? insets : null,
     late: o.late ?? null,
@@ -435,6 +466,30 @@ async function sendEvent(page, event, profile) {
     const [x, y] = tap[1] ? [Number(tap[1]), Number(tap[2])] : [vp.width / 2, vp.height / 2];
     out('lifecycle', `tap at ${x},${y}`);
     return page.mouse.click(x, y);
+  }
+  if (event === 'swipe' || event === 'swipe-cancel') {
+    if (!profile.mx) {
+      out('lifecycle', event === 'swipe' ? 'swipe: the host sends no swipe progress; the commit is a Back' : 'swipe-cancel: the host sends no swipe progress; nothing reaches the page');
+      return event === 'swipe' ? sendEvent(page, 'back', profile) : undefined;
+    }
+    // Android's predictive back from the left edge, at the touch's progress.
+    const mx = (name, progress) => page.evaluate(
+      ([n, p]) => window.__fakeHostMx(n, p == null ? {} : { touchX: 20 + p * 300, touchY: 400, progress: p, swipeEdge: 0 }),
+      [name, progress],
+    );
+    out('lifecycle', `${event}: backStarted, backProgressed 0.25..0.75`);
+    await mx('backStarted', 0);
+    for (const p of [0.25, 0.5, 0.75]) {
+      await sleep(60);
+      await mx('backProgressed', p);
+    }
+    await sleep(60);
+    if (event === 'swipe-cancel') {
+      out('lifecycle', 'swipe-cancel: backCancelled');
+      return mx('backCancelled', null);
+    }
+    // The commit is the activity's Back in "native" mode.
+    return sendEvent(page, 'back', profile);
   }
   if (profile.wx) {
     const type = { pause: 'WX_ON_PAUSE', resume: 'WX_ON_RESUME', back: 'WX_ON_BACK' }[event];

@@ -211,6 +211,109 @@ void main() {
     expect(bridge.historyWrites, isNotEmpty);
   });
 
+  test('WebUI X v608: a swipe drives predictive back, its commit too', () {
+    final (bridge, hooks, _) = install(FakeBridge.webuix608());
+    expect(bridge.mxRegistered, WebUiEmbedding.mxBackEvents);
+    const origin = {'origin': true, 'state': null};
+    const flutter = {'flutter': true};
+    bridge.activationController.add(null);
+    bridge
+      ..emitMx('backStarted', {
+        'touchX': 5.0,
+        'touchY': 900.0,
+        'progress': 0.0,
+        'swipeEdge': 0,
+      })
+      ..emitMx('backProgressed', {
+        'touchX': 300.0,
+        'touchY': 910.0,
+        'progress': 0.4,
+        'swipeEdge': 0,
+      });
+    expect(hooks.backGestures.map((g) => [g.$1, g.$2]), [
+      [
+        'startBackGesture',
+        {
+          'touchOffset': [5.0, 900.0],
+          'progress': 0.0,
+          'swipeEdge': 0,
+        },
+      ],
+      [
+        'updateBackGestureProgress',
+        {
+          'touchOffset': [300.0, 910.0],
+          'progress': 0.4,
+          'swipeEdge': 0,
+        },
+      ],
+    ]);
+    // backInterceptor "native" commits as the activity's Back: history.
+    expect(bridge.popState(origin), isTrue);
+    expect(bridge.popState(flutter), isTrue);
+    expect(hooks.backGestures.last.$1, 'commitBackGesture');
+    expect(hooks.popRoutes, 0);
+    // The next Back without a swipe (a button) is a plain popRoute.
+    expect(bridge.popState(origin), isTrue);
+    expect(bridge.popState(flutter), isTrue);
+    expect(hooks.popRoutes, 1);
+    expect(hooks.backGestures, hasLength(3));
+  });
+
+  test('WebUI X v608: a cancelled swipe, then Back, is a popRoute', () {
+    final (bridge, hooks, _) = install(FakeBridge.webuix608());
+    bridge
+      ..emitMx('backProgressed', {'progress': 0.2, 'swipeEdge': 1})
+      ..emitMx('backStarted', {
+        'touchX': 1000.0,
+        'touchY': 10.0,
+        'progress': 0.0,
+        'swipeEdge': 1,
+      })
+      ..emitMx('backCancelled')
+      ..emitMx('backCancelled');
+    expect(hooks.backGestures.map((g) => g.$1), [
+      'startBackGesture',
+      'cancelBackGesture',
+    ]);
+    // "javascript" modes send backPressed where history cannot go back.
+    bridge.emitMx('backPressed');
+    expect(hooks.popRoutes, 1);
+  });
+
+  test('WebUI X v608: backPressed commits a swipe in progress', () {
+    final (bridge, hooks, _) = install(FakeBridge.webuix608());
+    bridge
+      ..emitMx('backStarted', {
+        'touchX': 3.0,
+        'touchY': 4.0,
+        'progress': 1.5,
+        'swipeEdge': 2,
+      })
+      ..emitMx('backPressed');
+    expect(hooks.backGestures.map((g) => [g.$1, g.$2]), [
+      [
+        'startBackGesture',
+        {'touchOffset': null, 'progress': 1.0, 'swipeEdge': 0},
+      ],
+      ['commitBackGesture', null],
+    ]);
+    expect(hooks.popRoutes, 0);
+  });
+
+  test('hosts without MX events register none', () {
+    for (final bridge in [
+      FakeBridge.kernelsu(),
+      FakeBridge.next(),
+      FakeBridge.apatch(),
+      FakeBridge.webuix(),
+    ]) {
+      final (_, hooks, _) = install(bridge);
+      expect(bridge.mxRegistered, isEmpty);
+      expect(hooks.backGestures, isEmpty);
+    }
+  });
+
   test('KernelSU: brightness follows the theme colours when served', () {
     final bridge = FakeBridge.kernelsu()
       ..cssVariables['background'] = '#1a1c1e';

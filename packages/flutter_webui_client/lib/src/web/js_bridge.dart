@@ -51,6 +51,13 @@ final class JsHostBridge implements HostBridge {
       _call(_webui, name, args);
 
   @override
+  Object? webuiProperty(String name) {
+    final value = _webui?.getProperty<JSAny?>(name.toJS);
+    if (value == null || value.typeofEquals('function')) return null;
+    return value.dartify();
+  }
+
+  @override
   Map<String, Object?>? moduleInfo() {
     final Object? raw;
     try {
@@ -167,6 +174,48 @@ final class JsHostBridge implements HostBridge {
     );
     return controller.stream;
   }();
+
+  /// The payload fields of WebUI X's back events. The event object also
+  /// carries its DOM element, so only these are read.
+  static const List<String> _mxFields = [
+    'touchX',
+    'touchY',
+    'progress',
+    'swipeEdge',
+  ];
+
+  @override
+  Stream<HostEvent> mxEvents(List<String> names) {
+    final controller = StreamController<HostEvent>.broadcast(sync: true);
+    void register() {
+      final document = web.document as JSObject;
+      if (!_isFunction(document, 'addMXEventListener')) return;
+      for (final name in names) {
+        document.callMethodVarArgs<JSAny?>('addMXEventListener'.toJS, [
+          name.toJS,
+          ((JSObject? event) {
+            final data = <String, Object?>{
+              for (final field in _mxFields)
+                field: event?.getProperty<JSAny?>(field.toJS).dartify(),
+            };
+            controller.add(HostEvent(name, data));
+          }).toJS,
+        ]);
+      }
+    }
+
+    // WebUI X defines addMXEventListener in its own DOMContentLoaded
+    // listener, added at document start, so it runs before ours.
+    if (web.document.readyState == 'loading') {
+      web.document.addEventListener(
+        'DOMContentLoaded',
+        ((web.Event _) => register()).toJS,
+      );
+    } else {
+      register();
+    }
+    return controller.stream;
+  }
 
   @override
   String? cssVariable(String name) {
