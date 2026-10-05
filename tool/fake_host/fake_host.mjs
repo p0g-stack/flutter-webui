@@ -27,7 +27,7 @@ const USAGE = `usage: node tool/fake_host/fake_host.mjs --webroot <dir> [options
   --events <list>       after the first frame, in order: pause, resume, back, swipe, swipe-cancel, tap[@x:y],
                         system-dark, system-light (prefers-color-scheme), wait<ms>
                         (e.g. tap,wait500,back,pause,wait2000,resume,back; tap is the viewport centre)
-  --shell-refused       ksu.exec returns null and never calls back, as WebUI X v608 without
+  --shell-refused       ksu.exec returns "" and never calls back, as WebUI X v608 without
                         "kernelsu.permission.SHELL" in config.json permissions (or after Reject)
   --exec-local          run ksu.exec commands with /bin/sh on this machine (default: run nothing, exit 0);
                         ksud module config is tool/fake_host/ksud, keeping tmp.config under the
@@ -170,10 +170,12 @@ function installBridge(cfg) {
   const methods = {
     exec(cmd, options, callbackName) {
       call('ksu.exec', [cmd]);
-      // WebUI X v608's gate: null at once, nothing run, no callback.
-      if (cfg.shellRefused) return null;
-      // The one-argument form answers synchronously with stdout (not run here).
-      if (arguments.length === 1) return '';
+      // WebUI X v608's gate: nothing run, no callback; its method dispatcher
+      // turns the gate's null into "" (lab, after Reject).
+      if (cfg.shellRefused) return '';
+      // The one-argument form answers synchronously with stdout (only echo
+      // is answered here).
+      if (arguments.length === 1) return /^echo /.test(cmd) ? cmd.slice(5) + '\n' : '';
       window.__fakeHostExec(cmd).then(([code, stdout, stderr]) => {
         const cb = window[callbackName];
         if (typeof cb === 'function') cb(code, stdout, stderr);

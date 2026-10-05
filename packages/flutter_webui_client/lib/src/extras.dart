@@ -9,6 +9,11 @@ import 'bridge.dart';
 /// (WebUI X `webui.createShortcut()`). KernelSU-family managers offer the same
 /// from their own module menu, so elsewhere [isSupported] is false and
 /// [create] throws [UnsupportedError].
+///
+/// WebUI X draws the shortcut from the module's icon: `webuiIcon=<path>` (or
+/// `icon=`) in `module.prop`, a PNG found first under `webroot/`, then under
+/// the module directory. Without one [create] returns false and the host
+/// shows its own "invalid icon" toast (v608; lab).
 final class ModuleShortcut {
   ModuleShortcut(this._bridge);
 
@@ -21,12 +26,20 @@ final class ModuleShortcut {
   /// the page loaded; null where unknown.
   bool? get exists {
     if (!isSupported) return null;
-    final value = _bridge.webuiProperty('hasShortcut');
-    return value is bool ? value : null;
+    // A property, read when the page loads; WebUI X hands it through its
+    // string dispatcher, so it may arrive as "true" or "false".
+    return switch (_bridge.webuiProperty('hasShortcut')) {
+      final bool value => value,
+      'true' => true,
+      'false' => false,
+      _ => null,
+    };
   }
 
   /// Asks the launcher to pin the shortcut; the launcher confirms with the
-  /// user. Returns whether the host made the request.
+  /// user. Returns whether the host made the request: false when the
+  /// launcher cannot pin, the shortcut exists, or the module has no icon
+  /// (see the class comment); the host says which in a toast.
   bool create() {
     if (!isSupported) {
       throw UnsupportedError(
@@ -77,6 +90,9 @@ final class HostPackageInfo {
   /// found or inaccessible").
   final String? error;
 
+  /// Whether the host knew the package ([error] unset).
+  bool get found => error == null;
+
   /// Every field the host returned.
   final Map<String, Object?> raw;
 
@@ -88,10 +104,19 @@ String? _string(Object? v) => v is String ? v : null;
 
 /// The manager's own package list (`ksu.listPackages` and
 /// `ksu.getPackagesInfo`, on KernelSU and WebUI X), read without a root
-/// shell. A fast path only: hosts filter what they return (WebUI X Play
-/// builds list launchable apps only), so the root channel stays the way to
-/// see every package. Where the host has neither, [isSupported] is false and
-/// the methods throw [UnsupportedError].
+/// shell. A fast path only: each host answers from its own view, so the
+/// root channel stays the way to see every package.
+///
+/// - KernelSU answers from its Superuser screen's app list (loaded by the
+///   manager, without special apps), so a package outside it, such as
+///   `android`, comes back with [HostPackageInfo.error] and no icon.
+/// - WebUI X v608 answers from the package manager (Play builds: launchable
+///   apps only).
+///
+/// A package the host did not find is data, not a failure: check
+/// [HostPackageInfo.found] and fall back to the root channel. Where the host
+/// has no list, [isSupported] is false and the methods throw
+/// [UnsupportedError].
 final class HostPackages {
   HostPackages(this._bridge);
 
@@ -127,8 +152,10 @@ final class HostPackages {
   }
 
   /// The package's launcher icon as the host serves it to the WebView
-  /// (`ksu://icon/<package>`, a PNG). It loads in an `<img>`; whether
-  /// `Image.network` can fetch it depends on the host.
+  /// (`ksu://icon/<package>`, a PNG; `Image.network` with
+  /// `WebHtmlElementStrategy.prefer` loads it as an `<img>`). The host serves
+  /// only packages its own list has: one from [list], or [info] with
+  /// [HostPackageInfo.found]; any other answers 404.
   Uri iconUri(String packageName) => Uri.parse('ksu://icon/$packageName');
 
   static Object? _decode(Object? raw) {

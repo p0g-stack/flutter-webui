@@ -92,13 +92,20 @@ final class JsHostBridge implements HostBridge {
   /// host refused it.
   static const Duration refusalCheckAfter = Duration(seconds: 2);
 
-  /// `ksu.exec('true')` in its synchronous form: null (not a string) only
-  /// when the host refuses shell access. A host without that form throws,
-  /// which tells nothing.
+  /// What [_shellRefused] echoes.
+  static const String _refusalProbe = 'flutter-webui';
+
+  /// `ksu.exec('echo flutter-webui')` in its synchronous form: a host that
+  /// runs it answers with that line; a refusing one with null (WebUI X's
+  /// gate) or an empty string (WebUI X v608's method dispatcher turns the
+  /// gate's null into ""; lab, after Reject). A host without that form
+  /// throws, which tells nothing.
   static bool _shellRefused(JSObject? ksu) {
     try {
-      final out = ksu!.callMethodVarArgs<JSAny?>('exec'.toJS, ['true'.toJS]);
-      return out.isNull;
+      final out = ksu!.callMethodVarArgs<JSAny?>('exec'.toJS, [
+        'echo $_refusalProbe'.toJS,
+      ]).dartify();
+      return out == null || (out is String && out.trim().isEmpty);
     } on Object {
       return false;
     }
@@ -134,7 +141,7 @@ final class JsHostBridge implements HostBridge {
     // A refused exec returns at once and never calls back; a slow command
     // and a refused one look the same from here. So after a moment check
     // with the one-argument exec, which every host answers synchronously
-    // with its stdout, and a refusing host with null.
+    // with its stdout, and a refusing host with null or "".
     Timer(refusalCheckAfter, () {
       if (completer.isCompleted || !_shellRefused(ksu)) return;
       globalContext.delete(name.toJS);

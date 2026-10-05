@@ -173,7 +173,7 @@ a machine that has one, nothing needs installing; point
 | `--manager-colors <hex>` | serve `/internal/colors.css` with this `--background` (the manager's Monet theme); without it, a missing file |
 | `--events` | after the first frame, in order: `pause`, `resume`, `back`, `swipe` (a predictive back swipe: on `webuix608` `backStarted`, `backProgressed` 0.25 to 0.75, then the native Back; elsewhere a Back), `swipe-cancel` (the same ending in `backCancelled`; elsewhere nothing), `tap[@x:y]` (a click, the viewport centre by default), `system-dark`, `system-light` (`prefers-color-scheme`), `wait<ms>` |
 | `--exec-local` | run `ksu.exec` commands with `/bin/sh` here; off by default (exec answers `0, '', ''`). `ksud module config` is `tool/fake_host/ksud` (through `FLUTTER_WEBUI_KSUD`) and `/data/adb/<id>` a temp dir (`FLUTTER_WEBUI_DATA`), both fresh per run; the module itself must be at `/data/adb/modules/<id>` (a symlink will do) |
-| `--shell-refused` | `ksu.exec` returns null and never calls back, in both forms: WebUI X v608 without `kernelsu.permission.SHELL` (or after Reject) |
+| `--shell-refused` | `ksu.exec` returns `""` and never calls back, in both forms: WebUI X v608 without `kernelsu.permission.SHELL` (or after Reject), whose method dispatcher turns the gate's null into `""`. Without the flag the one-argument form answers `echo <text>` with `<text>` |
 | `--csp <policy>` | send a Content-Security-Policy with HTML pages |
 | `--screenshot <png>`, `--timeout <s>`, `--hold <s>`, `--viewport WxH` | |
 

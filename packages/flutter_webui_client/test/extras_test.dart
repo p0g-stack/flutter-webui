@@ -19,6 +19,22 @@ void main() {
       expect(bridge.calls, ['webui.createShortcut()']);
     });
 
+    test('hasShortcut may arrive as a string', () {
+      final bridge = FakeBridge.webuix608();
+      bridge.webuiProperties['hasShortcut'] = 'true';
+      expect(ModuleShortcut(bridge).exists, isTrue);
+      bridge.webuiProperties['hasShortcut'] = 'false';
+      expect(ModuleShortcut(bridge).exists, isFalse);
+      bridge.webuiProperties['hasShortcut'] = null;
+      expect(ModuleShortcut(bridge).exists, isNull);
+    });
+
+    test('a refused pin is false, not an error', () {
+      final bridge = FakeBridge.webuix608()
+        ..webuiAnswers['createShortcut'] = false;
+      expect(ModuleShortcut(bridge).create(), isFalse);
+    });
+
     test('elsewhere it is unsupported and calls nothing', () {
       for (final bridge in [
         FakeBridge.kernelsu(),
@@ -61,7 +77,9 @@ void main() {
       expect(info.first.versionCode, 3);
       expect(info.first.uid, 10123);
       expect(info.first.isSystem, isFalse);
+      expect(info.first.found, isTrue);
       expect(info.last.error, isNotNull);
+      expect(info.last.found, isFalse);
       expect(bridge.calls.first, 'ksu.listPackages(user)');
       expect(packages.iconUri('a.b').toString(), 'ksu://icon/a.b');
     });
