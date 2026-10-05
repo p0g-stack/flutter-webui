@@ -35,6 +35,16 @@ void main() {
       expect(ModuleShortcut(bridge).create(), isFalse);
     });
 
+    test('no boolean answer is null: requested, outcome unknown', () {
+      // v608: a boxed Boolean reaches the page as no boolean at all.
+      for (final answer in [null, const <String, Object?>{}, 'true']) {
+        final bridge = FakeBridge.webuix608()
+          ..webuiAnswers['createShortcut'] = answer;
+        expect(ModuleShortcut(bridge).create(), isNull);
+        expect(bridge.calls, ['webui.createShortcut()']);
+      }
+    });
+
     test('elsewhere it is unsupported and calls nothing', () {
       for (final bridge in [
         FakeBridge.kernelsu(),

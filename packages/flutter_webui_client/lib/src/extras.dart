@@ -12,8 +12,16 @@ import 'bridge.dart';
 ///
 /// WebUI X draws the shortcut from the module's icon: `webuiIcon=<path>` (or
 /// `icon=`) in `module.prop`, a PNG found first under `webroot/`, then under
-/// the module directory. Without one [create] returns false and the host
-/// shows its own "invalid icon" toast (v608; lab).
+/// the module directory. Without one the host shows an "invalid icon" toast
+/// and pins nothing (v608; lab).
+///
+/// On WebUI X v608 neither answer can be trusted, so [create] is a request
+/// and the launcher's dialog is the outcome (devicelab, 2026-10-05):
+/// - `createShortcut()` returns a boxed `java.lang.Boolean`, which WebView's
+///   bridge does not hand to the page as a boolean: the page never sees
+///   true, even when the pin dialog opens.
+/// - `hasShortcut` looks for `shortcut_<id>_<engine>` while `createShortcut`
+///   pins `shortcut_<id>`, so it stays false after a pin.
 final class ModuleShortcut {
   ModuleShortcut(this._bridge);
 
@@ -23,7 +31,8 @@ final class ModuleShortcut {
   bool get isSupported => _bridge.webuiHas('createShortcut');
 
   /// Whether the module's shortcut is already pinned, as the host saw it when
-  /// the page loaded; null where unknown.
+  /// the page loaded; null where unknown. WebUI X v608 reports false even
+  /// after a pin (see the class comment), so read false as "unknown".
   bool? get exists {
     if (!isSupported) return null;
     // A property, read when the page loads; WebUI X hands it through its
@@ -37,17 +46,25 @@ final class ModuleShortcut {
   }
 
   /// Asks the launcher to pin the shortcut; the launcher confirms with the
-  /// user. Returns whether the host made the request: false when the
-  /// launcher cannot pin, the shortcut exists, or the module has no icon
-  /// (see the class comment); the host says which in a toast.
-  bool create() {
+  /// user, and the host says in a toast when it cannot (no launcher support,
+  /// already pinned, no icon). Returns the host's answer when it gives a
+  /// boolean (true: requested, false: refused), else null: requested, with
+  /// the result shown to the user only (WebUI X v608).
+  bool? create() {
     if (!isSupported) {
       throw UnsupportedError(
         'This host cannot pin a shortcut from the page; KernelSU managers '
         'offer it in their module menu.',
       );
     }
-    return _bridge.callWebui('createShortcut') == true;
+    final Object? answer;
+    try {
+      answer = _bridge.callWebui('createShortcut');
+    } on Object {
+      // The call threw; whether the host asked the launcher is unknown.
+      return null;
+    }
+    return answer is bool ? answer : null;
   }
 }
 
