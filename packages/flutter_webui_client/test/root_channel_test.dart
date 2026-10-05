@@ -121,6 +121,29 @@ void main() {
     );
   });
 
+  test('a host refusing shell access fails at once, without a retry', () async {
+    var calls = 0;
+    await expectLater(
+      RootChannel.connect(
+        transport: transport,
+        start: () async {
+          calls++;
+          throw const ShellRefusedException('sh root start');
+        },
+      ),
+      throwsA(
+        isA<RootChannelException>()
+            .having((e) => e.code, 'code', 'shell-refused')
+            .having(
+              (e) => e.message,
+              'message',
+              contains('kernelsu.permission.SHELL'),
+            ),
+      ),
+    );
+    expect(calls, 1);
+  });
+
   test('parseSession takes the last line', () {
     final info = RootChannel.parseSession(
       'noise\n{"protocol":1,"version":"0.1.0","port":5,"token":"t",'

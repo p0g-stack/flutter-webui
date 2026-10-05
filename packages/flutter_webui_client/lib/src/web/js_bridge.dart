@@ -81,6 +81,22 @@ final class JsHostBridge implements HostBridge {
 
   static int _execCount = 0;
 
+  /// How long an exec may go unanswered before [exec] checks whether the
+  /// host refused it.
+  static const Duration refusalCheckAfter = Duration(seconds: 2);
+
+  /// `ksu.exec('true')` in its synchronous form: null (not a string) only
+  /// when the host refuses shell access. A host without that form throws,
+  /// which tells nothing.
+  static bool _shellRefused(JSObject? ksu) {
+    try {
+      final out = ksu!.callMethodVarArgs<JSAny?>('exec'.toJS, ['true'.toJS]);
+      return out.isNull;
+    } on Object {
+      return false;
+    }
+  }
+
   @override
   Future<ExecResult> exec(String command) {
     final ksu = _ksu;
@@ -108,6 +124,15 @@ final class JsHostBridge implements HostBridge {
       '{}'.toJS,
       name.toJS,
     ]);
+    // A refused exec returns at once and never calls back; a slow command
+    // and a refused one look the same from here. So after a moment check
+    // with the one-argument exec, which every host answers synchronously
+    // with its stdout, and a refusing host with null.
+    Timer(refusalCheckAfter, () {
+      if (completer.isCompleted || !_shellRefused(ksu)) return;
+      globalContext.delete(name.toJS);
+      completer.completeError(ShellRefusedException(command));
+    });
     return completer.future.timeout(
       const Duration(seconds: 30),
       onTimeout: () {

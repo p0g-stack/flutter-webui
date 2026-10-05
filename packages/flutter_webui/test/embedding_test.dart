@@ -196,13 +196,19 @@ void main() {
     expect(bridge.popState({'serialCount': 0, 'state': null}), isFalse);
   });
 
-  test('WebUI X and a browser tab leave history alone', () {
-    for (final b in [FakeBridge.webuix(), FakeBridge.browser()]) {
-      final (bridge, _, _) = install(b);
-      bridge.activationController.add(null);
-      expect(bridge.historyWrites, isEmpty);
-      expect(bridge.popStateFilter, isNull);
-    }
+  test('a browser tab leaves history alone', () {
+    final (bridge, _, _) = install(FakeBridge.browser());
+    bridge.activationController.add(null);
+    expect(bridge.historyWrites, isEmpty);
+    expect(bridge.popStateFilter, isNull);
+  });
+
+  test('WebUI X keeps its Back entry as KernelSU does', () {
+    // backInterceptor "native" (v608) is WebView history, as on KernelSU.
+    final (bridge, _, _) = install(FakeBridge.webuix());
+    expect(bridge.popStateFilter, isNotNull);
+    bridge.activationController.add(null);
+    expect(bridge.historyWrites, isNotEmpty);
   });
 
   test('KernelSU: brightness follows the theme colours when served', () {
@@ -220,9 +226,11 @@ void main() {
     expect(hooks.brightness, isNull);
   });
 
-  test('WebUI X keeps isDarkMode() over its colours', () {
+  test('WebUI X follows its colours, else isDarkMode()', () {
     final bridge = FakeBridge.webuix()..cssVariables['background'] = '#ffffff';
     final (_, hooks, _) = install(bridge);
+    expect(hooks.brightness, HostBrightness.light);
+    bridge.cssVariables.clear();
     bridge.colorsController.add(null);
     expect(hooks.brightness, HostBrightness.dark);
   });

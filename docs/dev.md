@@ -166,13 +166,14 @@ a machine that has one, nothing needs installing; point
 | Option | Meaning |
 |---|---|
 | `--webroot <dir>` | a `flutter build web` output with the bootstrap (a module's `webroot`) |
-| `--host` | `kernelsu`, `next`, `apatch`, `webuix`, `browser` (the `FakeBridge` profiles in `packages/flutter_webui_client/lib/testing.dart`) |
+| `--host` | `kernelsu`, `next`, `apatch`, `webuix` (v438), `webuix608` (Play v608), `browser` (the `FakeBridge` profiles in `packages/flutter_webui_client/lib/testing.dart`) |
 | `--entry <path>` | page to open; `'dev.html?dev=http://127.0.0.1:8080/'` for the dev loop |
 | `--dark` | `prefers-color-scheme: dark`, and `$<id>.isDarkMode()` true on `webuix` |
 | `--insets T,B` or `T,R,B,L` | safe-area insets in px (default: the profile's) |
 | `--manager-colors <hex>` | serve `/internal/colors.css` with this `--background` (the manager's Monet theme); without it, a missing file |
 | `--events` | after the first frame, in order: `pause`, `resume`, `back`, `tap[@x:y]` (a click, the viewport centre by default), `system-dark`, `system-light` (`prefers-color-scheme`), `wait<ms>` |
 | `--exec-local` | run `ksu.exec` commands with `/bin/sh` here; off by default (exec answers `0, '', ''`). `ksud module config` is `tool/fake_host/ksud` (through `FLUTTER_WEBUI_KSUD`) and `/data/adb/<id>` a temp dir (`FLUTTER_WEBUI_DATA`), both fresh per run; the module itself must be at `/data/adb/modules/<id>` (a symlink will do) |
+| `--shell-refused` | `ksu.exec` returns null and never calls back, in both forms: WebUI X v608 without `kernelsu.permission.SHELL` (or after Reject) |
 | `--csp <policy>` | send a Content-Security-Policy with HTML pages |
 | `--screenshot <png>`, `--timeout <s>`, `--hold <s>`, `--viewport WxH` | |
 
@@ -187,6 +188,7 @@ Profiles:
 | `next` | `ksu` with `enableInsets`, `moduleInfo`, no `exit` | `insets.css`, 24/48 | empty 200 | same |
 | `apatch` | `ksu` with `enableInsets`, no `moduleInfo` (id from the meta), no `exit` | none | empty 200 | same |
 | `webuix` | `ksu` with `moduleInfo`, `mmrl`; `webui.exit`; `$<id>.isDarkMode()` | variables on `<html>` and `insets.css`, 30/20 | 404 | `WX_ON_PAUSE` / `WX_ON_RESUME` / `WX_ON_BACK` messages (JSON strings) |
+| `webuix608` | as `webuix`, `webui` with `exit` only | same | 404 | as `next` (`backInterceptor: "native"`: live `canGoBack()`); no `WX_*` messages |
 | `browser` | none | none | 404 | as `kernelsu`, Back is `history.back()` |
 
 Back on the KernelSU-family profiles follows Chromium's history intervention,

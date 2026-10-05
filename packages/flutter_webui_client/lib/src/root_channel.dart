@@ -71,7 +71,12 @@ final class RootChannel {
   }) async {
     var problem = 'not tried';
     for (var i = 0; i < attempts; i++) {
-      final result = await start();
+      final ExecResult result;
+      try {
+        result = await start();
+      } on ShellRefusedException catch (e) {
+        throw RootChannelException('shell-refused', e.message);
+      }
       final info = parseSession(result.stdout);
       if (result.exitCode != 0 || info == null) {
         final err = result.stderr.trim();

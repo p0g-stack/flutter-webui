@@ -15,6 +15,25 @@ final class ExecResult {
   String toString() => 'ExecResult($exitCode, $stdout, $stderr)';
 }
 
+/// The host refused `ksu.exec`: the command did not run and no result will
+/// come. WebUI X gates exec behind `kernelsu.permission.SHELL` in the
+/// module's `webroot/config.json` `permissions`: without it the call returns
+/// at once, the user is asked (Allow reloads the page), and a Reject stands
+/// until the manager restarts.
+final class ShellRefusedException implements Exception {
+  const ShellRefusedException(this.command);
+
+  final String command;
+
+  String get message =>
+      'the host refused shell access (WebUI X: add '
+      '"kernelsu.permission.SHELL" to "permissions" in webroot/config.json, '
+      'or allow it when asked)';
+
+  @override
+  String toString() => 'ShellRefusedException: $message';
+}
+
 /// An event a WebUI X host posts to the page (`WX_ON_*`).
 final class HostEvent {
   const HostEvent(this.type, [this.data]);

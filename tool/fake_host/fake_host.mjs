@@ -17,7 +17,7 @@ import { pathToFileURL } from 'node:url';
 
 const USAGE = `usage: node tool/fake_host/fake_host.mjs --webroot <dir> [options]
   --webroot <dir>       module webroot (a flutter build web output with the bootstrap)
-  --host <profile>      kernelsu | next | apatch | webuix | browser (default kernelsu)
+  --host <profile>      kernelsu | next | apatch | webuix | webuix608 | browser (default kernelsu)
   --entry <path>        page to open (default index.html; e.g. 'dev.html?dev=http://127.0.0.1:8080/')
   --dark                dark system theme (prefers-color-scheme, and $<id>.isDarkMode() on webuix)
   --manager-colors <hex> serve /internal/colors.css with this --background (the manager's Monet
@@ -27,6 +27,8 @@ const USAGE = `usage: node tool/fake_host/fake_host.mjs --webroot <dir> [options
   --events <list>       after the first frame, in order: pause, resume, back, tap[@x:y],
                         system-dark, system-light (prefers-color-scheme), wait<ms>
                         (e.g. tap,wait500,back,pause,wait2000,resume,back; tap is the viewport centre)
+  --shell-refused       ksu.exec returns null and never calls back, as WebUI X v608 without
+                        "kernelsu.permission.SHELL" in config.json permissions (or after Reject)
   --exec-local          run ksu.exec commands with /bin/sh on this machine (default: run nothing, exit 0);
                         ksud module config is tool/fake_host/ksud, keeping tmp.config under the
                         system temp dir, and the module data dir (/data/adb/<id>) is a temp dir too;
@@ -57,11 +59,19 @@ const PROFILES = {
     ksu: ['exec', 'spawn', 'toast', 'fullScreen', 'enableInsets', 'listPackages', 'getPackagesInfo'],
     insetsCss: false, insets: null, missing: 'empty200',
   },
-  // WebUI X Portable / MMRL: ksu.mmrl, window.webui, $<id>.isDarkMode(), WX_* events.
+  // WebUI X Portable v438 / MMRL: ksu.mmrl, window.webui, $<id>.isDarkMode(), WX_* events
+  // (backInterceptor "javascript": Back is WX_ON_BACK only).
   webuix: {
     ksu: ['exec', 'spawn', 'toast', 'fullScreen', 'moduleInfo', 'mmrl'],
     webui: ['exit', 'startActivity'],
-    insetsCss: true, insets: [30, 0, 20, 0], missing: '404', wx: true,
+    insetsCss: true, insets: [30, 0, 20, 0], missing: '404', wx: true, injectInsets: true,
+  },
+  // WebUI X Portable v608 (Play) with backInterceptor "native": no WX_* events, Back is
+  // WebView.canGoBack() (live), then goBack(), else the activity finishes; webui.exit kept.
+  webuix608: {
+    ksu: ['exec', 'spawn', 'toast', 'fullScreen', 'moduleInfo', 'mmrl'],
+    webui: ['exit'],
+    insetsCss: true, insets: [30, 0, 20, 0], missing: '404', injectInsets: true,
   },
   // A browser tab: no globals at all.
   browser: { ksu: [], insetsCss: false, insets: null, missing: '404', bare: true },
@@ -102,6 +112,7 @@ function parseArgs(argv) {
       case '--module-id': o.moduleId = next(); break;
       case '--events': o.events = next().split(',').map((s) => s.trim()).filter(Boolean); break;
       case '--exec-local': o.execLocal = true; break;
+      case '--shell-refused': o.shellRefused = true; break;
       case '--screenshot': o.screenshot = path.resolve(next()); break;
       case '--timeout': o.timeout = Number(next()); break;
       case '--hold': o.hold = Number(next()); break;
@@ -157,6 +168,10 @@ function installBridge(cfg) {
   const methods = {
     exec(cmd, options, callbackName) {
       call('ksu.exec', [cmd]);
+      // WebUI X v608's gate: null at once, nothing run, no callback.
+      if (cfg.shellRefused) return null;
+      // The one-argument form answers synchronously with stdout (not run here).
+      if (arguments.length === 1) return '';
       window.__fakeHostExec(cmd).then(([code, stdout, stderr]) => {
         const cb = window[callbackName];
         if (typeof cb === 'function') cb(code, stdout, stderr);
@@ -189,7 +204,7 @@ function installBridge(cfg) {
       window[global] = { isDarkMode() { call(global + '.isDarkMode', []); return cfg.dark; } };
     });
   }
-  if (cfg.wx && cfg.insets) {
+  if (cfg.injectInsets && cfg.insets) {
     // WebUI X injects the variables itself rather than through a stylesheet.
     const [t, r, b, l] = cfg.insets;
     const set = () => {
@@ -219,6 +234,7 @@ async function main() {
   const hasInsets = insets && insets.some((v) => v !== 0);
   const cfg = {
     ksu: profile.ksu, webui: profile.webui, wx: !!profile.wx, bare: !!profile.bare, dark: o.dark,
+    injectInsets: !!profile.injectInsets, shellRefused: !!o.shellRefused,
     info: { id: moduleId, name: moduleId, moduleDir: `/data/adb/modules/${moduleId}` },
     insets: hasInsets ? insets : null,
     late: o.late ?? null,

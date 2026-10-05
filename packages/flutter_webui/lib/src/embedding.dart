@@ -60,14 +60,17 @@ abstract final class WebUiClipboard {
 /// Connects a WebUI host to the engine, so a stock app behaves as in a
 /// browser tab:
 ///
-/// | Flutter | WebUI | WebUI X |
+/// | Flutter | WebUI | WebUI X (extras, where present) |
 /// |---|---|---|
-/// | safe-area padding | `insets.css` variables (edge-to-edge requested) | `WX_ON_INSETS`, injected variables |
-/// | `AppLifecycleState` | page visibility (`web_ui` as is) | `WX_ON_PAUSE` = hidden until `WX_ON_RESUME` |
-/// | back | WebView history, kept reachable (`_installBackEntry`) | `WX_ON_BACK` = `history.back()` |
-/// | `SystemNavigator.pop` | `ksu.exit()` after history unwinds | `webui.exit()` |
-/// | brightness | the manager's `colors.css` background, else `prefers-color-scheme` | `$<id>.isDarkMode()` on start and resume |
+/// | safe-area padding | `insets.css` variables (edge-to-edge requested) | injected variables; `WX_ON_INSETS` (v438) |
+/// | `AppLifecycleState` | page visibility (`web_ui` as is) | `WX_ON_PAUSE` = hidden until `WX_ON_RESUME` (v438) |
+/// | back | WebView history, kept reachable (`_installBackEntry`) | same; `WX_ON_BACK` = `history.back()` (v438 `backInterceptor: "javascript"`) |
+/// | `SystemNavigator.pop` | `ksu.exit()` or `webui.exit()`, else history unwinds so the host's Back closes the page | same |
+/// | brightness | the manager's `colors.css` background, else `prefers-color-scheme` | same, else `$<id>.isDarkMode()` |
 /// | clipboard | [clipboard], or [WebUiClipboard.use]'s | same |
+///
+/// The baseline (left column) needs only what every host and version has;
+/// WebUI X's own events and globals are extras, used when present.
 final class WebUiEmbedding {
   WebUiEmbedding(this.host, this.bridge, this.hooks, {this.clipboard});
 
@@ -85,19 +88,18 @@ final class WebUiEmbedding {
   /// first event, not the probe, is what proves it.
   void install() {
     _subscriptions.add(bridge.events.listen(_onWxEvent));
-    if (host.kind == WebUiHostKind.webuix) _readWxBrightness();
     if (!host.isWebUi) return;
     _installExit();
     WebUiClipboard._installed = this;
     final engineClipboard = WebUiClipboard._used ?? clipboard;
     if (engineClipboard != null) hooks.setClipboard(engineClipboard);
     _installInsets();
-    if (host.kind != WebUiHostKind.webuix) _installColorsBrightness();
-    if (host.kind != WebUiHostKind.webuix) _installBackEntry();
+    _installBrightness();
+    _installBackEntry();
   }
 
-  /// KernelSU-family Back is `WebView.canGoBack()`, then `goBack()`, else the
-  /// activity finishes. Chromium's history intervention leaves out of
+  /// KernelSU-family Back, and WebUI X's with `backInterceptor: "native"`, is
+  /// `WebView.canGoBack()`, then `goBack()`, else the activity finishes. Chromium's history intervention leaves out of
   /// `canGoBack()` an entry the page left by `pushState` without user
   /// activation, and `web_ui` pushes its "flutter" entry over the "origin" one
   /// at startup and again after each Back. So Back from a pushed route closed
@@ -167,9 +169,7 @@ final class WebUiEmbedding {
     if (identical(WebUiClipboard._installed, this)) {
       WebUiClipboard._installed = null;
     }
-    if (host.isWebUi && host.kind != WebUiHostKind.webuix) {
-      bridge.popStateFilter = null;
-    }
+    if (host.isWebUi) bridge.popStateFilter = null;
   }
 
   bool _exiting = false;
@@ -222,7 +222,7 @@ final class WebUiEmbedding {
         hooks.setLifecycle(HostLifecycle.hidden);
       case 'WX_ON_RESUME':
         hooks.setLifecycle(null);
-        _readWxBrightness();
+        _applyBrightness();
       case 'WX_ON_BACK':
         // As a browser's Back: through history, where web_ui turns it into
         // popRoute. WebUI X pages can have a single history entry (devicelab:
@@ -244,25 +244,28 @@ final class WebUiEmbedding {
   /// system. When it serves its theme colours in `/internal/colors.css`
   /// (KernelSU in Monet modes or the Material UI, Next on Android 12+), the
   /// page follows the luminance of their `--background` instead; with no
-  /// colours the engine keeps the system's.
-  void _installColorsBrightness() {
-    _applyColorsBrightness();
+  /// colours the engine keeps the system's. WebUI X serves the file too;
+  /// without it, its `$<id>.isDarkMode()` decides when present.
+  void _installBrightness() {
+    _applyBrightness();
     _subscriptions.add(
-      bridge.cssColorsChanged.listen((_) => _applyColorsBrightness()),
+      bridge.cssColorsChanged.listen((_) => _applyBrightness()),
     );
   }
 
-  void _applyColorsBrightness() {
-    hooks.setBrightness(brightnessOfCssColor(bridge.cssVariable('background')));
+  void _applyBrightness() {
+    final colors = brightnessOfCssColor(bridge.cssVariable('background'));
+    if (colors == null && _readWxBrightness()) return;
+    hooks.setBrightness(colors);
   }
 
-  void _readWxBrightness() {
-    final global = host.moduleGlobal;
-    if (global == null) return;
+  /// Applies WebUI X's `$<id>.isDarkMode()`; false when there is none.
+  bool _readWxBrightness() {
+    if (host.kind != WebUiHostKind.webuix) return false;
     final dark = bridge.callModuleGlobal(host.moduleId!, 'isDarkMode');
-    if (dark is bool) {
-      hooks.setBrightness(dark ? HostBrightness.dark : HostBrightness.light);
-    }
+    if (dark is! bool) return false;
+    hooks.setBrightness(dark ? HostBrightness.dark : HostBrightness.light);
+    return true;
   }
 }
 
