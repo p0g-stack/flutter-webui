@@ -335,13 +335,13 @@ Per host (from the sources above):
   bvr.cc). Rotation or dark mode recreates the activity, which reloads the page.
   The biometric lock overlay (`lockOverlay`, NEXT/WebUIActivity.kt:462-506) is a
   view, not a pause, so the page stays visible under it.
-- **WebUI X**: `onPause()` + `pauseTimers()` + `WX_ON_PAUSE`. By the Chromium
-  source, `onPause()` alone makes `visibilityState` hidden, which **contradicts
-  hosts.md** ("`visibilityState` stays `visible`"). Measure, then fix whichever
-  is wrong. `pauseTimers()` → `setWebKitSharedTimersSuspended(true)`
-  (AwContents.java:3043-3048) is process-wide. WebUI X runs its WebUI activity
-  in its own process (WX/app/src/main/AndroidManifest.xml, `android:process`), so
-  this is contained.
+- **WebUI X**: `onPause()` hides the page (`visibilityState` hidden, by the
+  Chromium source), as hosts.md says. v438 also sends `WX_ON_PAUSE` and calls
+  `pauseTimers()` → `setWebKitSharedTimersSuspended(true)`
+  (AwContents.java:3043-3048), which is process-wide; v608 sends no events
+  and no longer pauses timers (hosts.md "Lifetime"). WebUI X runs its WebUI
+  activity in its own process (WX/app/src/main/AndroidManifest.xml,
+  `android:process`), so the timer pause is contained.
 - Throttling: a hidden page gets Blink's hidden-page timer throttling and no
   `requestAnimationFrame`, the same as a background tab (inferred). This matches
   AGENTS.md "never rely on page timers while hidden".
