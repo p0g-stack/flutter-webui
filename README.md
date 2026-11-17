@@ -62,7 +62,7 @@ An app needs four things, which `flutter_p0g` provides (`create .` adds the
 `webui/` platform folder, `precache` the SDK, `build webui` the module):
 
 1. **The patched web SDK.** `dart run web_ui/tool/build_web_sdk.dart --flutter
-   <flutter 3.47.9> --out <dir>` applies `web_ui/patches` to the release's
+   <flutter 3.50.0> --out <dir>` applies `web_ui/patches` to the release's
    `web_ui` sources and rebuilds the platform kernels and DDC modules with the
    Dart SDK's own tools (about 20 s, no engine build). Overlay `<dir>` on
    `<flutter>/bin/cache`.

@@ -1,4 +1,4 @@
-From 6ebbc93f8436a4e6a357c04fb0da272baab5dd9f Mon Sep 17 00:00:00 2001
+From 14adcb9ce67c9d8c47039eb1998b1dd6c234e081 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 1 Oct 2026 05:35:35 +0000
 Subject: [PATCH 2/5] [web] Lifecycle: honour the host's reported state

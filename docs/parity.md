@@ -1,6 +1,6 @@
 # Parity: IME, clipboard, fonts, locale, accessibility, lifecycle
 
-Current target: Flutter 3.47.9 and WebUI X v660. The v438/v608 WebUI X targets
+Current target: Flutter 3.50.0 and WebUI X v660. The v438/v608 WebUI X targets
 are retired. [Current host delta](hosts.md#current-support-webui-x-v660)
 supersedes the old WebUI X claims below: page visibility (not `WX_ON_*`)
 drives lifecycle, CSS drives insets, MX events drive predictive Back, and

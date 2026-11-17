@@ -1,4 +1,4 @@
-From 0f310b0a50b36e923c85b15a11ae07851ee21ca4 Mon Sep 17 00:00:00 2001
+From 394d7e106b313b40b08209d107ad8fd3052ee6ad Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 1 Oct 2026 05:35:35 +0000
 Subject: [PATCH 5/5] [web] Clipboard: use the host's clipboard when it

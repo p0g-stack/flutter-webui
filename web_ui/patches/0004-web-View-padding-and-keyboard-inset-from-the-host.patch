@@ -1,4 +1,4 @@
-From b69f722122681830873a1fca95b32e514d05b3e5 Mon Sep 17 00:00:00 2001
+From 82bd735a61194c0487809517b415da3550686b83 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 1 Oct 2026 05:35:35 +0000
 Subject: [PATCH 4/5] [web] View padding and keyboard inset from the host
@@ -8,14 +8,14 @@ devicePixelRatio); padding is viewPadding less viewInsets, as on mobile
 embedders. A host-reported keyboard height replaces the visual-viewport
 measurement.
 ---
- .../lib/web_ui/lib/src/engine/window.dart     | 52 ++++++++++++++++---
- 1 file changed, 46 insertions(+), 6 deletions(-)
+ .../lib/web_ui/lib/src/engine/window.dart     | 39 ++++++++++++++++---
+ 1 file changed, 34 insertions(+), 5 deletions(-)
 
 diff --git a/engine/src/flutter/lib/web_ui/lib/src/engine/window.dart b/engine/src/flutter/lib/web_ui/lib/src/engine/window.dart
-index 6a7c610bd62..7ba88f8e2a7 100644
+index 73f8460e799..e7290b8e63e 100644
 --- a/engine/src/flutter/lib/web_ui/lib/src/engine/window.dart
 +++ b/engine/src/flutter/lib/web_ui/lib/src/engine/window.dart
-@@ -13,6 +13,7 @@ import '../engine.dart' show DimensionsProvider, registerHotRestartListener, ren
+@@ -14,6 +14,7 @@ import '../engine.dart' show DimensionsProvider, registerHotRestartListener, ren
  import 'browser_detection.dart';
  import 'display.dart';
  import 'dom.dart';
@@ -23,8 +23,8 @@ index 6a7c610bd62..7ba88f8e2a7 100644
  import 'initialization.dart';
  import 'js_interop/js_app.dart';
  import 'mouse/context_menu.dart';
-@@ -70,6 +71,9 @@ class EngineFlutterView implements ui.FlutterView {
-     embeddingStrategy.attachViewRoot(dom.rootElement);
+@@ -72,6 +73,9 @@ class EngineFlutterView implements ui.FlutterView {
+     _addAccessibilityPlaceholder();
      pointerBinding = PointerBinding(this);
      _resizeSubscription = onResize.listen(_handleBrowserResize);
 +    _hostMetricsSubscription = HostEmbedding.instance.onMetricsChanged.listen(
@@ -33,7 +33,7 @@ index 6a7c610bd62..7ba88f8e2a7 100644
      _globalHtmlAttributes.applyAttributes(
        viewId: viewId,
        rendererTag: renderer.rendererTag,
-@@ -93,6 +97,7 @@ class EngineFlutterView implements ui.FlutterView {
+@@ -95,6 +99,7 @@ class EngineFlutterView implements ui.FlutterView {
    final EmbeddingStrategy embeddingStrategy;
  
    late final StreamSubscription<ui.Size?> _resizeSubscription;
@@ -41,23 +41,25 @@ index 6a7c610bd62..7ba88f8e2a7 100644
  
    final ViewConfiguration _viewConfiguration = const ViewConfiguration();
  
-@@ -108,6 +113,7 @@ class EngineFlutterView implements ui.FlutterView {
+@@ -127,6 +132,7 @@ class EngineFlutterView implements ui.FlutterView {
      }
      isDisposed = true;
      _resizeSubscription.cancel();
 +    _hostMetricsSubscription.cancel();
      dimensionsProvider.close();
      pointerBinding.dispose();
-     dom.rootElement.remove();
-@@ -261,13 +267,40 @@ class EngineFlutterView implements ui.FlutterView {
+     if (_hasAccessibilityPlaceholder) {
+@@ -286,7 +292,21 @@ class EngineFlutterView implements ui.FlutterView {
    ViewPadding _viewInsets = ui.ViewPadding.zero as ViewPadding;
  
    @override
--  ViewPadding get viewPadding => _viewConfiguration.viewPadding;
+-  ViewPadding get viewPadding => _viewPadding ??= dimensionsProvider.computeSafeAreaInsets();
 +  ViewPadding get viewPadding {
 +    final ui_web.HostInsets? host = HostEmbedding.instance.viewPadding;
 +    if (host == null) {
-+      return _viewConfiguration.viewPadding;
++      // No host-reported padding: fall back to the browser's safe area, which
++      // is computed lazily and refreshed whenever the view is resized.
++      return _viewPadding ??= dimensionsProvider.computeSafeAreaInsets();
 +    }
 +    final double dpr = devicePixelRatio;
 +    return ViewPadding(
@@ -68,31 +70,18 @@ index 6a7c610bd62..7ba88f8e2a7 100644
 +    );
 +  }
  
+   /// Lazily populated, and recomputed every time the view is resized (which
+   /// includes device rotations).
+@@ -303,6 +323,8 @@ class EngineFlutterView implements ui.FlutterView {
    @override
    ViewPadding get systemGestureInsets => _viewConfiguration.systemGestureInsets;
  
 +  /// [viewPadding] less what [viewInsets] already covers, as on mobile
 +  /// embedders.
    @override
--  ViewPadding get padding => _viewConfiguration.padding;
-+  ViewPadding get padding {
-+    if (HostEmbedding.instance.viewPadding == null) {
-+      return _viewConfiguration.padding;
-+    }
-+    final ViewPadding view = viewPadding;
-+    final ViewPadding insets = viewInsets;
-+    double less(double a, double b) => a - b > 0 ? a - b : 0;
-+    return ViewPadding(
-+      left: less(view.left, insets.left),
-+      top: less(view.top, insets.top),
-+      right: less(view.right, insets.right),
-+      bottom: less(view.bottom, insets.bottom),
-+    );
-+  }
+   ViewPadding get padding => viewPadding.minus(viewInsets);
  
-   @override
-   ui.GestureSettings get gestureSettings => _viewConfiguration.gestureSettings;
-@@ -325,6 +358,13 @@ class EngineFlutterView implements ui.FlutterView {
+@@ -365,6 +387,13 @@ class EngineFlutterView implements ui.FlutterView {
      platformDispatcher.invokeOnMetricsChanged();
    }
  
@@ -106,7 +95,7 @@ index 6a7c610bd62..7ba88f8e2a7 100644
    /// Uses the previous physical size and current innerHeight/innerWidth
    /// values to decide if a device is rotating.
    ///
-@@ -361,10 +401,10 @@ class EngineFlutterView implements ui.FlutterView {
+@@ -401,10 +430,10 @@ class EngineFlutterView implements ui.FlutterView {
    }
  
    void _computeOnScreenKeyboardInsets(bool isEditingOnMobile) {

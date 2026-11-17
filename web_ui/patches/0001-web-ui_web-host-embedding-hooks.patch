@@ -1,4 +1,4 @@
-From 9415d5ded0278066e3efceab29dff1c903767013 Mon Sep 17 00:00:00 2001
+From fce410f16b5b31538113d2b4f19fe854d9c54136 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 1 Oct 2026 05:35:35 +0000
 Subject: [PATCH 1/5] [web] ui_web: host embedding hooks
@@ -18,17 +18,17 @@ null keeps today's behaviour.
  create mode 100644 engine/src/flutter/lib/web_ui/lib/ui_web/src/ui_web/host_embedding.dart
 
 diff --git a/engine/src/flutter/lib/web_ui/lib/src/engine.dart b/engine/src/flutter/lib/web_ui/lib/src/engine.dart
-index 54823c096c9..14f3f955d97 100644
+index 850ee2a8565..fee4fb09e27 100644
 --- a/engine/src/flutter/lib/web_ui/lib/src/engine.dart
 +++ b/engine/src/flutter/lib/web_ui/lib/src/engine.dart
-@@ -63,6 +63,7 @@ export 'engine/font_fallbacks.dart';
+@@ -66,6 +66,7 @@ export 'engine/font_fallbacks.dart';
  export 'engine/fonts.dart';
  export 'engine/frame_service.dart';
  export 'engine/frame_timing_recorder.dart';
 +export 'engine/host_embedding.dart';
- export 'engine/html_image_element_codec.dart';
  export 'engine/image_decoder.dart';
- export 'engine/image_decoding_manager.dart';
+ export 'engine/image_format_detector.dart';
+ export 'engine/initialization.dart';
 diff --git a/engine/src/flutter/lib/web_ui/lib/src/engine/host_embedding.dart b/engine/src/flutter/lib/web_ui/lib/src/engine/host_embedding.dart
 new file mode 100644
 index 00000000000..ce0e113abc7
