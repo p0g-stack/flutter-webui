@@ -12,6 +12,14 @@ owned by `bricks`, generic launcher rules in `squadron_process`
 Status: **v1**. Additive changes only (new optional fields, new ops); anything
 else bumps `protocol`.
 
+The root package also supplies `setWifiEnabled` to the root-side Termux:API
+client. `WifiEnable` is intercepted before contacting the APK: effective UID
+must be 0, then `cmd wifi set-wifi-enabled enabled|disabled` runs directly,
+without a new `su` grant. Success preserves Termux:API's empty output; lack
+of root returns `{"error":"WifiEnable needs root","code":"needs_root"}`.
+Command failure uses `wifi_enable_failed`. This is a helper used by a process
+already launched through the channel, not a new WebSocket operation.
+
 ## Files
 
 ```
