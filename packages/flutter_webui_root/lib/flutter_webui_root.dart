@@ -22,3 +22,4 @@ export 'src/run_state.dart'
         readBootId,
         setMode,
         staleReason;
+export 'src/wifi.dart' show setWifiEnabled;
