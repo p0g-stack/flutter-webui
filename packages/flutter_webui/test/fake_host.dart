@@ -8,7 +8,6 @@ export 'package:flutter_webui_client/testing.dart';
 /// Records what the embedding hands the engine.
 class FakeHooks implements EngineHooks {
   Insets? padding;
-  HostLifecycle? lifecycle;
   HostBrightness? brightness;
   Future<void> Function()? exitHandler;
   TextClipboard? clipboard;
@@ -18,12 +17,6 @@ class FakeHooks implements EngineHooks {
   void setViewPadding(Insets? p) {
     padding = p;
     log.add('padding $p');
-  }
-
-  @override
-  void setLifecycle(HostLifecycle? s) {
-    lifecycle = s;
-    log.add('lifecycle $s');
   }
 
   @override

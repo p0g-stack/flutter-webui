@@ -1,5 +1,54 @@
 # Hosts
 
+## Current support: WebUI X v660
+
+Only the latest stable WebUI X is supported. v438 Portable and v608 Play are
+retired, not compatibility targets. KernelSU manager plus webui-termux-api
+remains the path without WebUI X. Qualification is simulator-only; physical
+devices and predictive gestures need separate evidence.
+
+Source comparison: [v608…v660](https://github.com/MMRLApp/WebUI-X-Portable/compare/v608...v660).
+The entries below the historical heading retain their original dates and builds.
+
+- Package fast path uses `ksu.pm().listPackages(type)` and
+  `ksu.pm().getPackagesInfo(string[])`. Declare `kernelsu.permission.PM` in
+  `webroot/config.json`; permission refusal is an error, not permission to
+  fall back to deprecated APIs. KernelSU retains its direct package methods.
+- `ksu.io()` now returns JS classes (`version() == 1`). Stream handles are
+  owned by the WebUI and closed on destroy; append is fixed. Unknown handles
+  and several IO failures return empty strings/false, and four File operations
+  (`deleteRecursive`, `createNewSymlink`, `createNewLink`, `clear`) still
+  return false. See [KsuIO](https://github.com/MMRLApp/WebUI-X-Portable/blob/v660/app/src/main/java/com/dergoogler/mmrl/wx/ui/webui/interfaces/ksu/KsuIO.kt).
+- `fs.inputstream` returns a Response wrapper; `fs.outputstream` returns a
+  WritableStream wrapper and now takes a boolean second argument. Despite
+  its name, `fs.readFileSync` is registered async. These replace upstream's
+  old stream wrappers, not ours: flutter-webui does not use either host IO
+  interface. Its root WebSocket carries binary process frames, stdin, exit
+  status and attached-process ownership; KsuIO does not replace that contract.
+  Keep the existing root transport on both hosts rather than add an unused
+  host-only file transport. See [filesystem interface](https://github.com/MMRLApp/WebUI-X-Portable/blob/v660/app/src/main/java/com/dergoogler/mmrl/wx/ui/webui/interfaces/FileSystemInterface.kt).
+- `ksu.exec` keeps synchronous and callback forms, accepting object or JSON
+  options. SHELL permission remains required. Interfaces are now mutable JS
+  namespaces; capability detection still probes methods, never version strings.
+- WebUI state is destroyed on Compose dispose; shell scope and open KsuIO
+  handles close. A fresh page reconnects through `root start`; no page-owned
+  socket or host object is reused after disposal. Page visibility supplies
+  lifecycle, CSS supplies insets, and MX events supply predictive Back.
+  The v438 `WX_*` message bridge is removed.
+- The old WebUIActivity classes are gone. Both new activity classes read
+  `MODULE_ID`: `.ui.webui.activity.NewProcessWebUIActivity` and
+  `.ui.webui.activity.ExistingProcessWebUIActivity`. Launch modes are separate
+  process, same-app process, or navigation stack (the new default).
+  Shortcuts always use the new-process activity and VIEW intent. The
+  `hasShortcut` ID mismatch remains in v660; it is not a reliable pin result.
+  See [activity](https://github.com/MMRLApp/WebUI-X-Portable/blob/v660/app/src/main/java/com/dergoogler/mmrl/wx/ui/webui/activity/BaseWebUIActivity.kt)
+  and [shortcut](https://github.com/MMRLApp/WebUI-X-Portable/blob/v660/app/src/main/java/com/dergoogler/mmrl/wx/model/module/Module.kt).
+- Per-file response headers are supported; no COOP/COEP is added by this
+  stack. The Lua plugin was removed; this stack never used it. No `web_ui`
+  patch changes or rebuilt web SDK are required for these host changes.
+
+## Historical source survey and observations (retired WebUI X builds)
+
 How each manager behaves for a Flutter web page, and what flutter-webui does
 about it. Detection probes methods (`WebUiHost.detect`); the manager columns
 are only for reading. Sources: manager source reads (KernelSU 08a3b08,

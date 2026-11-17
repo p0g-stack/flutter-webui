@@ -17,7 +17,7 @@ import { pathToFileURL } from 'node:url';
 
 const USAGE = `usage: node tool/fake_host/fake_host.mjs --webroot <dir> [options]
   --webroot <dir>       module webroot (a flutter build web output with the bootstrap)
-  --host <profile>      kernelsu | next | apatch | webuix | webuix608 | browser (default kernelsu)
+  --host <profile>      kernelsu | next | apatch | webuix | browser (default kernelsu)
   --entry <path>        page to open (default index.html; e.g. 'dev.html?dev=http://127.0.0.1:8080/')
   --dark                dark system theme (prefers-color-scheme, and $<id>.isDarkMode() on webuix)
   --manager-colors <hex> serve /internal/colors.css with this --background (the manager's Monet
@@ -27,7 +27,7 @@ const USAGE = `usage: node tool/fake_host/fake_host.mjs --webroot <dir> [options
   --events <list>       after the first frame, in order: pause, resume, back, swipe, swipe-cancel, tap[@x:y],
                         system-dark, system-light (prefers-color-scheme), wait<ms>
                         (e.g. tap,wait500,back,pause,wait2000,resume,back; tap is the viewport centre)
-  --shell-refused       ksu.exec returns "" and never calls back, as WebUI X v608 without
+  --shell-refused       ksu.exec returns null and never calls back, as WebUI X without
                         "kernelsu.permission.SHELL" in config.json permissions (or after Reject)
   --exec-local          run ksu.exec commands with /bin/sh on this machine (default: run nothing, exit 0);
                         ksud module config is tool/fake_host/ksud, keeping tmp.config under the
@@ -59,19 +59,10 @@ const PROFILES = {
     ksu: ['exec', 'spawn', 'toast', 'fullScreen', 'enableInsets', 'listPackages', 'getPackagesInfo'],
     insetsCss: false, insets: null, missing: 'empty200',
   },
-  // WebUI X Portable v438 / MMRL: ksu.mmrl, window.webui, $<id>.isDarkMode(), WX_* events
-  // (backInterceptor "javascript": Back is WX_ON_BACK only).
+  // Current WebUI X: class-based package manager, CSS insets and MX events.
+  // backInterceptor "native" keeps WebView history and predictive Back.
   webuix: {
-    ksu: ['exec', 'spawn', 'toast', 'fullScreen', 'moduleInfo', 'mmrl'],
-    webui: ['exit', 'startActivity'],
-    insetsCss: true, insets: [30, 0, 20, 0], missing: '404', wx: true, injectInsets: true,
-  },
-  // WebUI X Portable v608 with backInterceptor "native": no WX_* events, Back is
-  // WebView.canGoBack() (live), then goBack(), else the activity finishes; webui.exit kept.
-  // document.addMXEventListener after DOMContentLoaded: a predictive back swipe sends
-  // backStarted, backProgressed..., then backCancelled or the native Back (swipe events).
-  webuix608: {
-    ksu: ['exec', 'spawn', 'toast', 'fullScreen', 'moduleInfo', 'listPackages', 'getPackagesInfo', 'mmrl'],
+    ksu: ['exec', 'spawn', 'toast', 'fullScreen', 'moduleInfo', 'pm', 'mmrl'],
     webui: ['exit', 'createShortcut'],
     insetsCss: true, insets: [30, 0, 20, 0], missing: '404', injectInsets: true, mx: true,
   },
@@ -170,9 +161,8 @@ function installBridge(cfg) {
   const methods = {
     exec(cmd, options, callbackName) {
       call('ksu.exec', [cmd]);
-      // WebUI X v608's gate: nothing run, no callback; its method dispatcher
-      // turns the gate's null into "" (lab, after Reject).
-      if (cfg.shellRefused) return '';
+      // Permission refusal runs nothing and never calls back.
+      if (cfg.shellRefused) return null;
       // The one-argument form answers synchronously with stdout (only echo
       // is answered here).
       if (arguments.length === 1) return /^echo /.test(cmd) ? cmd.slice(5) + '\n' : '';
@@ -198,6 +188,16 @@ function installBridge(cfg) {
         versionCode: 1, uid: p === 'android' ? 1000 : 10123, isSystem: p === 'android',
       })));
     },
+    pm() {
+      call('ksu.pm', []);
+      return {
+        version() { return 1; },
+        listPackages(type) { return methods.listPackages(type); },
+        getPackagesInfo(pkgs) {
+          return methods.getPackagesInfo(typeof pkgs === 'string' ? pkgs : JSON.stringify(pkgs));
+        },
+      };
+    },
     exit() { call('ksu.exit', []); },
     mmrl() { return true; },
   };
@@ -221,7 +221,7 @@ function installBridge(cfg) {
     });
   }
   if (cfg.mx) {
-    // v608's EventEmitterListener script: defined in a DOMContentLoaded listener; one
+    // EventEmitterListener: defined in a DOMContentLoaded listener; one
     // handler per (element, name); the payload merged into the event object.
     const handlers = {};
     document.addEventListener('DOMContentLoaded', () => {
@@ -266,7 +266,7 @@ async function main() {
   const insets = o.insets ?? profile.insets;
   const hasInsets = insets && insets.some((v) => v !== 0);
   const cfg = {
-    ksu: profile.ksu, webui: profile.webui, wx: !!profile.wx, bare: !!profile.bare, dark: o.dark,
+    ksu: profile.ksu, webui: profile.webui, bare: !!profile.bare, dark: o.dark,
     injectInsets: !!profile.injectInsets, shellRefused: !!o.shellRefused, mx: !!profile.mx,
     info: { id: moduleId, name: moduleId, moduleDir: `/data/adb/modules/${moduleId}` },
     insets: hasInsets ? insets : null,
@@ -336,7 +336,7 @@ async function main() {
   });
   await page.addInitScript(installBridge, cfg);
   await page.addInitScript(pageWatch);
-  if (!profile.wx && !profile.bare) await page.addInitScript(historyModel, !!profile.cachedCanGoBack);
+  if (!profile.bare) await page.addInitScript(historyModel, !!profile.cachedCanGoBack);
 
   await page.route(`${ORIGIN}/**`, async (route) => {
     const url = new URL(route.request().url());
@@ -492,11 +492,6 @@ async function sendEvent(page, event, profile) {
     }
     // The commit is the activity's Back in "native" mode.
     return sendEvent(page, 'back', profile);
-  }
-  if (profile.wx) {
-    const type = { pause: 'WX_ON_PAUSE', resume: 'WX_ON_RESUME', back: 'WX_ON_BACK' }[event];
-    out('lifecycle', `${event}: postMessage ${type}`);
-    return page.evaluate((t) => window.postMessage(JSON.stringify({ type: t }), '*'), type);
   }
   if (event === 'back') {
     // The KernelSU-family activity: WebView.goBack() if canGoBack(), else finish().

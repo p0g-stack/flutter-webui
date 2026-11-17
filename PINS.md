@@ -10,6 +10,9 @@ Pins: what this repo holds fixed, where, and who moves it. Values read from the 
 
 Produces: the patched web SDK release, `web-sdk-<flutter>-<engine:7>-<this repo:7>` (`flutter-webui-web-sdk.tar.xz` + `.sha256` + `manifest.json`), by `.github/workflows/web-sdk-release.yaml` on pushes touching `web_ui/`. Reproducible tarball: same pins, same sha256.
 Consumers pin this repo by commit: flutter_p0g `kFlutterWebuiCommit`, bricks' p0g_app, webui-packages (each repo's PINS.md has the current value).
-Minimums: the cgroup fix needs `a455782` (channel 0.2.3); WebUI X v608 Back and the fast `shell-refused` error need the commit that added this line, together with flutter_p0g's `webroot/config.json` carrying `"permissions": ["kernelsu.permission.SHELL"]` and `"backInterceptor": "native"`.
-WebUI X v608 extras (predictive back from the swipe events, `WebUi.shortcut`, `WebUi.packages`) need the commit that added this line; presence-gated, nothing changes on hosts without them.
-Hosts the WebUI X notes in docs/hosts.md were read against: WebUI X Portable v438 (devicelab) and v608 (Play APK sha256 `ae88a8cad10b7d7d2146e9b02726fe588595691ae1d9e95206e0c293deb2afb2`, by bytecode; not yet run).
+WebUI X target: latest stable only, now v660 official (SHA256
+`e7357bcb1dc607a2d1a8de80997d2aae79d3d1453d1c2dce9ebcf6fe000c3787`).
+v438 and v608 are retired. Modules declare SHELL and PM permissions and use
+`backInterceptor: native`. KernelSU's direct package APIs remain supported.
+This host migration changes no `web_ui` patches: keep the existing 3.47.9
+web SDK release identity when advancing the Dart source pin.

@@ -40,7 +40,6 @@ void main() {
       await hooks.exitHandler!();
       expect(bridge.calls.last, 'ksu.exit()');
       expect(hooks.clipboard, isNotNull);
-      expect(hooks.lifecycle, isNull);
     },
   );
 
@@ -81,60 +80,14 @@ void main() {
     expect(hooks.padding, isNull);
   });
 
-  test('WebUI X: pause/resume map to hidden and back, as a hidden tab', () {
-    final (bridge, hooks, _) = install(FakeBridge.webuix());
-    expect(hooks.brightness, HostBrightness.dark);
-    bridge.eventController.add(const HostEvent('WX_ON_PAUSE'));
-    expect(hooks.lifecycle, HostLifecycle.hidden);
-    bridge.darkMode = false;
-    bridge.eventController.add(const HostEvent('WX_ON_RESUME'));
-    expect(hooks.log.sublist(hooks.log.length - 2), [
-      'lifecycle null',
-      'brightness HostBrightness.light',
-    ]);
-  });
-
-  test('WebUI X: Back walks history; insets events; webui.exit', () async {
+  test('WebUI X: CSS insets and webui.exit', () async {
     final (bridge, hooks, _) = install(FakeBridge.webuix());
     expect(hooks.padding, const Insets(top: 30, bottom: 20));
-    bridge.eventController.add(const HostEvent('WX_ON_BACK'));
-    expect(bridge.backs, 1);
-    bridge.eventController.add(
-      const HostEvent('WX_ON_INSETS', {
-        'top': 12,
-        'bottom': 34,
-        'left': 0,
-        'right': 0,
-      }),
-    );
-    expect(hooks.padding, const Insets(top: 12, bottom: 34));
-    bridge.eventController.add(const HostEvent('WX_ON_INSETS', 'garbage'));
+    bridge.insets = const Insets(top: 12, bottom: 34);
+    bridge.insetsController.add(null);
     expect(hooks.padding, const Insets(top: 12, bottom: 34));
     await hooks.exitHandler!();
     expect(bridge.calls.last, 'webui.exit()');
-  });
-
-  test(
-    'WebUI X detected late: its first event installs Back and exit',
-    () async {
-      // The probe ran before WebUI X defined its globals.
-      final early = FakeBridge.browser();
-      final hooks = FakeHooks();
-      final bridge = FakeBridge.webuix();
-      WebUiEmbedding(WebUiHost.detect(early), bridge, hooks).install();
-      expect(hooks.exitHandler, isNull);
-      bridge.eventController.add(const HostEvent('WX_ON_BACK'));
-      expect(bridge.backs, 1);
-      await hooks.exitHandler!();
-      expect(bridge.calls.last, 'webui.exit()');
-    },
-  );
-
-  test('WebUI X: Back with a single history entry goes to popRoute', () {
-    final (bridge, hooks, _) = install(FakeBridge.webuix()..historyLength = 1);
-    bridge.eventController.add(const HostEvent('WX_ON_BACK'));
-    expect(bridge.backs, 0);
-    expect(hooks.popRoutes, 1);
   });
 
   test('KernelSU: Back stays reachable after the first gesture', () async {
@@ -204,15 +157,15 @@ void main() {
   });
 
   test('WebUI X keeps its Back entry as KernelSU does', () {
-    // backInterceptor "native" (v608) is WebView history, as on KernelSU.
+    // backInterceptor "native" is WebView history, as on KernelSU.
     final (bridge, _, _) = install(FakeBridge.webuix());
     expect(bridge.popStateFilter, isNotNull);
     bridge.activationController.add(null);
     expect(bridge.historyWrites, isNotEmpty);
   });
 
-  test('WebUI X v608: a swipe drives predictive back, its commit too', () {
-    final (bridge, hooks, _) = install(FakeBridge.webuix608());
+  test('WebUI X: a swipe drives predictive back, its commit too', () {
+    final (bridge, hooks, _) = install(FakeBridge.webuix());
     expect(bridge.mxRegistered, WebUiEmbedding.mxBackEvents);
     const origin = {'origin': true, 'state': null};
     const flutter = {'flutter': true};
@@ -260,8 +213,8 @@ void main() {
     expect(hooks.backGestures, hasLength(3));
   });
 
-  test('WebUI X v608: a cancelled swipe, then Back, is a popRoute', () {
-    final (bridge, hooks, _) = install(FakeBridge.webuix608());
+  test('WebUI X: a cancelled swipe, then Back, is a popRoute', () {
+    final (bridge, hooks, _) = install(FakeBridge.webuix());
     bridge
       ..emitMx('backProgressed', {'progress': 0.2, 'swipeEdge': 1})
       ..emitMx('backStarted', {
@@ -281,8 +234,8 @@ void main() {
     expect(hooks.popRoutes, 1);
   });
 
-  test('WebUI X v608: backPressed commits a swipe in progress', () {
-    final (bridge, hooks, _) = install(FakeBridge.webuix608());
+  test('WebUI X: backPressed commits a swipe in progress', () {
+    final (bridge, hooks, _) = install(FakeBridge.webuix());
     bridge
       ..emitMx('backStarted', {
         'touchX': 3.0,
@@ -306,7 +259,6 @@ void main() {
       FakeBridge.kernelsu(),
       FakeBridge.next(),
       FakeBridge.apatch(),
-      FakeBridge.webuix(),
     ]) {
       final (_, hooks, _) = install(bridge);
       expect(bridge.mxRegistered, isEmpty);
@@ -353,7 +305,11 @@ void main() {
   test('dispose stops listening', () {
     final (bridge, hooks, embedding) = install(FakeBridge.webuix());
     embedding.dispose();
-    bridge.eventController.add(const HostEvent('WX_ON_PAUSE'));
-    expect(hooks.lifecycle, isNull);
+    bridge.emitMx('backPressed');
+    bridge.insets = const Insets(top: 99);
+    bridge.insetsController.add(null);
+    expect(hooks.popRoutes, 0);
+    expect(hooks.padding, const Insets(top: 30, bottom: 20));
+    expect(bridge.popStateFilter, isNull);
   });
 }

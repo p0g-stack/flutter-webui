@@ -67,18 +67,8 @@ class FakeBridge implements HostBridge {
     metaId: 'demo',
   );
 
-  /// WebUI X Portable.
-  factory FakeBridge.webuix() => FakeBridge(
-    ksu: const {'exec', 'spawn', 'toast', 'fullScreen', 'moduleInfo', 'mmrl'},
-    webui: const {'exit', 'startActivity'},
-    info: const {'id': 'demo-mod', 'moduleDir': '/data/adb/modules/demo-mod'},
-    darkMode: true,
-    insets: const Insets(top: 30, bottom: 20),
-  );
-
-  /// WebUI X v608: no `WX_*` events; `document.addMXEventListener` back
-  /// events, shortcuts and the package list.
-  factory FakeBridge.webuix608() =>
+  /// WebUI X v660: class-based package manager and MX back events.
+  factory FakeBridge.webuix() =>
       FakeBridge(
           ksu: const {
             'exec',
@@ -86,8 +76,8 @@ class FakeBridge implements HostBridge {
             'toast',
             'fullScreen',
             'moduleInfo',
-            'listPackages',
-            'getPackagesInfo',
+            'pm',
+            'io',
             'mmrl',
           },
           webui: const {'exit', 'startActivity', 'createShortcut'},
@@ -96,6 +86,7 @@ class FakeBridge implements HostBridge {
             'moduleDir': '/data/adb/modules/demo-mod',
           },
           insets: const Insets(top: 30, bottom: 20),
+          darkMode: true,
         )
         ..mxListener = true
         ..webuiProperties['hasShortcut'] = false;
@@ -116,8 +107,6 @@ class FakeBridge implements HostBridge {
 
   /// `ksu.moduleInfo()` calls (a root shell round trip on KernelSU).
   int moduleInfoCalls = 0;
-  final StreamController<HostEvent> eventController =
-      StreamController.broadcast(sync: true);
   final StreamController<void> insetsController = StreamController.broadcast(
     sync: true,
   );
@@ -138,6 +127,16 @@ class FakeBridge implements HostBridge {
     final answer = ksuAnswers[name];
     return answer is Function ? Function.apply(answer, args) : answer;
   }
+
+  @override
+  Object? callKsuPm(String name, [List<Object?> args = const []]) {
+    calls.add('ksu.pm().$name(${args.join(',')})');
+    final answer = pmAnswers[name];
+    return answer is Function ? Function.apply(answer, args) : answer;
+  }
+
+  /// Answers from the class returned by `ksu.pm()`.
+  final Map<String, Object?> pmAnswers = {};
 
   @override
   Object? callWebui(String name, [List<Object?> args = const []]) {
@@ -181,10 +180,7 @@ class FakeBridge implements HostBridge {
     return onExec?.call(command) ?? Future.value(const ExecResult(0, '', ''));
   }
 
-  @override
-  Stream<HostEvent> get events => eventController.stream;
-
-  /// Whether `document.addMXEventListener` exists (WebUI X v608).
+  /// Whether `document.addMXEventListener` exists.
   bool mxListener = false;
 
   /// The names [mxEvents] registered, in order.
@@ -229,7 +225,7 @@ class FakeBridge implements HostBridge {
   @override
   void historyBack() => backs++;
 
-  /// `history.length`; WebUI X v438 pages report 1 at the root route.
+  /// The page's history length.
   @override
   int historyLength = 2;
 

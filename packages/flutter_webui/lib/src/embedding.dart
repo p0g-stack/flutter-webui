@@ -6,10 +6,6 @@ import 'dart:math' as math;
 
 import 'package:flutter_webui_client/flutter_webui_client.dart';
 
-/// Lifecycle states the embedding reports. Mirrors `dart:ui`'s
-/// `AppLifecycleState` without importing it, so this file runs on the VM.
-enum HostLifecycle { hidden }
-
 /// Light or dark, as the host reports it.
 enum HostBrightness { light, dark }
 
@@ -17,7 +13,6 @@ enum HostBrightness { light, dark }
 /// implementation forwards to them; tests record calls.
 abstract interface class EngineHooks {
   void setViewPadding(Insets? padding);
-  void setLifecycle(HostLifecycle? state);
   void setBrightness(HostBrightness? brightness);
   void setExitHandler(Future<void> Function()? handler);
   void setClipboard(TextClipboard? clipboard);
@@ -69,10 +64,10 @@ abstract final class WebUiClipboard {
 ///
 /// | Flutter | WebUI | WebUI X (extras, where present) |
 /// |---|---|---|
-/// | safe-area padding | `insets.css` variables (edge-to-edge requested) | injected variables; `WX_ON_INSETS` (v438) |
-/// | `AppLifecycleState` | page visibility (`web_ui` as is) | `WX_ON_PAUSE` = hidden until `WX_ON_RESUME` (v438) |
-/// | back | WebView history, kept reachable (`_installBackEntry`) | same; `WX_ON_BACK` = `history.back()` (v438 `backInterceptor: "javascript"`) |
-/// | predictive back | none (the gesture commits as Back) | v608 swipe events: the route follows the swipe (`_installPredictiveBack`) |
+/// | safe-area padding | `insets.css` variables (edge-to-edge requested) | injected variables |
+/// | `AppLifecycleState` | page visibility (`web_ui` as is) | same |
+/// | back | WebView history, kept reachable (`_installBackEntry`) | same |
+/// | predictive back | none (the gesture commits as Back) | MX swipe events: the route follows the swipe (`_installPredictiveBack`) |
 /// | `SystemNavigator.pop` | `ksu.exit()` or `webui.exit()`, else history unwinds so the host's Back closes the page | same |
 /// | brightness | the manager's `colors.css` background, else `prefers-color-scheme` | same, else `$<id>.isDarkMode()` |
 /// | clipboard | [clipboard], or [WebUiClipboard.use]'s | same |
@@ -91,11 +86,9 @@ final class WebUiEmbedding {
 
   final List<StreamSubscription<Object?>> _subscriptions = [];
 
-  /// Installs the handlers. In a browser tab it only listens for WebUI X
-  /// events: WebUI X may define its globals after the page starts, so its
-  /// first event, not the probe, is what proves it.
+  /// Installs handlers for the current page. A disposed WebUI or a shortcut
+  /// launch creates a fresh page and embedding, not a resumed JS session.
   void install() {
-    _subscriptions.add(bridge.events.listen(_onWxEvent));
     if (!host.isWebUi) return;
     _installExit();
     WebUiClipboard._installed = this;
@@ -118,7 +111,7 @@ final class WebUiEmbedding {
   /// Whether a predictive back gesture started and has not ended.
   bool _gestureActive = false;
 
-  /// WebUI X v608 forwards Android's predictive back callback to the page in
+  /// WebUI X forwards Android's predictive back callback to the page in
   /// every `backInterceptor` mode: `backStarted`, `backProgressed` and
   /// `backCancelled` reach `document.addMXEventListener` listeners whatever
   /// the mode, and only the commit differs. In `"native"` mode the commit is
@@ -127,8 +120,8 @@ final class WebUiEmbedding {
   /// the framework as `commitBackGesture` instead, so the route finishes the
   /// transition the swipe began. In the `"javascript"` modes the commit at
   /// the root (or always, in `"javascript-full"`) is `backPressed`, which
-  /// goes the same way. Hosts without the listener (KernelSU, Next, APatch,
-  /// v438) send nothing and keep the plain Back.
+  /// goes the same way. Hosts without the listener (KernelSU, Next, APatch)
+  /// send nothing and keep the plain Back.
   void _installPredictiveBack() {
     _subscriptions.add(
       bridge.mxEvents(mxBackEvents).listen((event) {
@@ -282,30 +275,6 @@ final class WebUiEmbedding {
     if (insets != null) hooks.setViewPadding(insets);
   }
 
-  void _onWxEvent(HostEvent event) {
-    _installExit();
-    switch (event.type) {
-      case 'WX_ON_PAUSE':
-        hooks.setLifecycle(HostLifecycle.hidden);
-      case 'WX_ON_RESUME':
-        hooks.setLifecycle(null);
-        _applyBrightness();
-      case 'WX_ON_BACK':
-        // As a browser's Back: through history, where web_ui turns it into
-        // popRoute. WebUI X pages can have a single history entry (devicelab:
-        // length 1 at the root route), where history.back() does nothing;
-        // then hand the framework the popRoute directly.
-        if (bridge.historyLength > 1) {
-          bridge.historyBack();
-        } else {
-          _popRoute();
-        }
-      case 'WX_ON_INSETS':
-        final insets = _insetsFrom(event.data);
-        if (insets != null) hooks.setViewPadding(insets);
-    }
-  }
-
   /// KernelSU's own light or dark theme (forced, or Monet) reaches its
   /// Compose UI but not the WebView, whose `prefers-color-scheme` follows the
   /// system. When it serves its theme colours in `/internal/colors.css`
@@ -356,28 +325,6 @@ Map<String, Object?> _backEventArguments(HostEvent event) {
     'progress': (number('progress') ?? 0).clamp(0.0, 1.0),
     'swipeEdge': edge == 1 ? 1 : 0,
   };
-}
-
-Insets? _insetsFrom(Object? data) {
-  if (data is! Map) return null;
-  double? side(String key) {
-    final v = data[key];
-    return v is num ? v.toDouble() : null;
-  }
-
-  final top = side('top');
-  final bottom = side('bottom');
-  final left = side('left');
-  final right = side('right');
-  if (top == null && bottom == null && left == null && right == null) {
-    return null;
-  }
-  return Insets(
-    top: top ?? 0,
-    bottom: bottom ?? 0,
-    left: left ?? 0,
-    right: right ?? 0,
-  );
 }
 
 /// Dark or light for a CSS hex colour (`#rgb`, `#rrggbb`, `#rrggbbaa`): dark

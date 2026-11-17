@@ -34,7 +34,7 @@ final class ShellRefusedException implements Exception {
   String toString() => 'ShellRefusedException: $message';
 }
 
-/// An event a WebUI X host posts to the page (`WX_ON_*`).
+/// A WebUI X MX event and its payload.
 final class HostEvent {
   const HostEvent(this.type, [this.data]);
 
@@ -85,6 +85,10 @@ abstract interface class HostBridge {
   /// Calls `ksu[name](...args)` and returns its result.
   Object? callKsu(String name, [List<Object?> args = const []]);
 
+  /// Calls `ksu.pm()[name](...args)` on hosts with the package manager API.
+  /// Throws if access is refused; never falls back to deprecated methods.
+  Object? callKsuPm(String name, [List<Object?> args = const []]);
+
   /// Calls `webui[name](...args)` and returns its result.
   Object? callWebui(String name, [List<Object?> args = const []]);
 
@@ -105,11 +109,8 @@ abstract interface class HostBridge {
   /// `ksu.exec(command, '{}', callback)`, with the callback answered.
   Future<ExecResult> exec(String command);
 
-  /// WebUI X `WX_*` events.
-  Stream<HostEvent> get events;
-
-  /// WebUI X `document.addMXEventListener` events named [names] (v608 and
-  /// later define it after `DOMContentLoaded`), as [HostEvent]s typed by
+  /// WebUI X `document.addMXEventListener` events named [names] (defined
+  /// after `DOMContentLoaded`), as [HostEvent]s typed by
   /// name with the event's payload fields as a map. Empty where the host has
   /// no such listener. Each call registers its own listeners; WebUI X keeps
   /// one per event name on `document`, so call it once per name.

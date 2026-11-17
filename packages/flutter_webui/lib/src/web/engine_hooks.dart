@@ -26,13 +26,6 @@ final class UiWebHooks implements EngineHooks {
   );
 
   @override
-  void setLifecycle(HostLifecycle? state) =>
-      ui_web.setHostAppLifecycleState(switch (state) {
-        HostLifecycle.hidden => ui.AppLifecycleState.hidden,
-        null => null,
-      });
-
-  @override
   void setBrightness(HostBrightness? brightness) =>
       ui_web.setHostPlatformBrightness(switch (brightness) {
         HostBrightness.light => ui.Brightness.light,

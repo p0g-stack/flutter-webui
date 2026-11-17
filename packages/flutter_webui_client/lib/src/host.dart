@@ -12,7 +12,7 @@ enum WebUiHostKind {
   /// The KernelSU WebUI bridge (`window.ksu`), from any manager.
   webui,
 
-  /// WebUI X (WebUI X Portable, MMRL): `ksu` plus `webui`, events and
+  /// WebUI X: `ksu` plus `webui`, events and
   /// `config.json`.
   webuix,
 }
@@ -43,6 +43,8 @@ final class WebUiHost {
     'moduleInfo',
     'listPackages',
     'getPackagesInfo',
+    'pm',
+    'io',
     'exit',
     'mmrl',
   ];

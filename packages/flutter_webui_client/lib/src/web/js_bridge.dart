@@ -47,6 +47,15 @@ final class JsHostBridge implements HostBridge {
       _call(_ksu, name, args);
 
   @override
+  Object? callKsuPm(String name, [List<Object?> args = const []]) {
+    final pm = _ksu!.callMethod<JSAny?>('pm'.toJS);
+    if (pm == null || !pm.typeofEquals('object')) {
+      throw StateError('ksu.pm() refused access; allow kernelsu.permission.PM');
+    }
+    return _call(pm as JSObject, name, args);
+  }
+
+  @override
   Object? callWebui(String name, [List<Object?> args = const []]) =>
       _call(_webui, name, args);
 
@@ -155,32 +164,6 @@ final class JsHostBridge implements HostBridge {
       },
     );
   }
-
-  @override
-  late final Stream<HostEvent> events = () {
-    final controller = StreamController<HostEvent>.broadcast();
-    web.window.addEventListener(
-      'message',
-      ((web.MessageEvent event) {
-        final data = event.data.dartify();
-        Object? message = data;
-        if (data is String) {
-          try {
-            message = jsonDecode(data);
-          } on FormatException {
-            return;
-          }
-        }
-        if (message is Map && message['type'] is String) {
-          final type = message['type'] as String;
-          if (type.startsWith('WX_')) {
-            controller.add(HostEvent(type, message['data']));
-          }
-        }
-      }).toJS,
-    );
-    return controller.stream;
-  }();
 
   /// The payload fields of WebUI X's back events. The event object also
   /// carries its DOM element, so only these are read.

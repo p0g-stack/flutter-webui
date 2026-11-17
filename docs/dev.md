@@ -166,14 +166,14 @@ a machine that has one, nothing needs installing; point
 | Option | Meaning |
 |---|---|
 | `--webroot <dir>` | a `flutter build web` output with the bootstrap (a module's `webroot`) |
-| `--host` | `kernelsu`, `next`, `apatch`, `webuix` (v438), `webuix608` (Play v608), `browser` (the `FakeBridge` profiles in `packages/flutter_webui_client/lib/testing.dart`) |
+| `--host` | `kernelsu`, `next`, `apatch`, `webuix` (current v660), `browser` (the `FakeBridge` profiles in `packages/flutter_webui_client/lib/testing.dart`) |
 | `--entry <path>` | page to open; `'dev.html?dev=http://127.0.0.1:8080/'` for the dev loop |
 | `--dark` | `prefers-color-scheme: dark`, and `$<id>.isDarkMode()` true on `webuix` |
 | `--insets T,B` or `T,R,B,L` | safe-area insets in px (default: the profile's) |
 | `--manager-colors <hex>` | serve `/internal/colors.css` with this `--background` (the manager's Monet theme); without it, a missing file |
-| `--events` | after the first frame, in order: `pause`, `resume`, `back`, `swipe` (a predictive back swipe: on `webuix608` `backStarted`, `backProgressed` 0.25 to 0.75, then the native Back; elsewhere a Back), `swipe-cancel` (the same ending in `backCancelled`; elsewhere nothing), `tap[@x:y]` (a click, the viewport centre by default), `system-dark`, `system-light` (`prefers-color-scheme`), `wait<ms>` |
+| `--events` | after the first frame, in order: `pause`, `resume`, `back`, `swipe` (on `webuix`: MX start/progress then native Back), `swipe-cancel` (MX cancellation), `tap[@x:y]`, `system-dark`, `system-light`, `wait<ms>` |
 | `--exec-local` | run `ksu.exec` commands with `/bin/sh` here; off by default (exec answers `0, '', ''`). `ksud module config` is `tool/fake_host/ksud` (through `FLUTTER_WEBUI_KSUD`) and `/data/adb/<id>` a temp dir (`FLUTTER_WEBUI_DATA`), both fresh per run; the module itself must be at `/data/adb/modules/<id>` (a symlink will do) |
-| `--shell-refused` | `ksu.exec` returns `""` and never calls back, in both forms: WebUI X v608 without `kernelsu.permission.SHELL` (or after Reject), whose method dispatcher turns the gate's null into `""`. Without the flag the one-argument form answers `echo <text>` with `<text>` |
+| `--shell-refused` | `ksu.exec` returns null and never calls back, as a refused WebUI X shell permission. Without the flag the one-argument form answers `echo <text>` with `<text>` |
 | `--csp <policy>` | send a Content-Security-Policy with HTML pages |
 | `--screenshot <png>`, `--timeout <s>`, `--hold <s>`, `--viewport WxH` | |
 
@@ -187,8 +187,7 @@ Profiles:
 | `kernelsu` | `ksu` with `enableEdgeToEdge`, `moduleInfo`, `exit` | `/internal/insets.css`, 24/48 | empty 200 | `visibilitychange` hidden / visible; `WebView.goBack()` if `canGoBack()`, else the activity finishes (below) |
 | `next` | `ksu` with `enableInsets`, `moduleInfo`, no `exit` | `insets.css`, 24/48 | empty 200 | same |
 | `apatch` | `ksu` with `enableInsets`, no `moduleInfo` (id from the meta), no `exit` | none | empty 200 | same |
-| `webuix` | `ksu` with `moduleInfo`, `mmrl`; `webui.exit`; `$<id>.isDarkMode()` | variables on `<html>` and `insets.css`, 30/20 | 404 | `WX_ON_PAUSE` / `WX_ON_RESUME` / `WX_ON_BACK` messages (JSON strings) |
-| `webuix608` | `ksu` with `moduleInfo`, `listPackages`, `getPackagesInfo`, `mmrl`; `webui` with `exit`, `createShortcut`, `hasShortcut`; `document.addMXEventListener` after `DOMContentLoaded` | same | 404 | as `next` (`backInterceptor: "native"`: live `canGoBack()`); no `WX_*` messages; `swipe` sends the back events |
+| `webuix` | `ksu.pm()` class for packages; `moduleInfo`, `mmrl`; `webui.exit`, `createShortcut`, boolean `hasShortcut`; MX back listener | CSS, 30/20 | 404 | visibility hidden/visible; native history Back and MX swipe events |
 | `browser` | none | none | 404 | as `kernelsu`, Back is `history.back()` |
 
 Back on the KernelSU-family profiles follows Chromium's history intervention,
@@ -209,13 +208,8 @@ Output, one line each: `[bridge]` calls into the host (`ksu.exit()`,
 unless `--verbose`. The fake grants Local Network Access so `dev.html` can
 reach `127.0.0.1` (`--deny-local-network` shows the failure).
 
-The counter app (release, dart2js) with `--events pause,resume,back`, all five
-profiles: first frame at 670 to 760 ms; `kernelsu` called
-`ksu.enableEdgeToEdge(true)` and, on Back at the root route, `ksu.exit()`;
-`next` and `apatch` called `ksu.enableInsets(true)` and no exit (as
-docs/hosts.md says); `webuix` called `$<id>.isDarkMode()` on start and on
-`WX_ON_RESUME` and `webui.exit()` on `WX_ON_BACK`; `browser` left the page on
-Back.
+The former v438 `webuix` and v608 `webuix608` profiles are retired. Historical
+counter timing results are not qualification evidence for the current profile.
 
 ### Dev server
 

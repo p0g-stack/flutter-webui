@@ -9,9 +9,8 @@ import 'package:test/test.dart';
 
 void main() {
   group('ModuleShortcut', () {
-    test('WebUI X v608 pins through webui.createShortcut', () {
-      final bridge = FakeBridge.webuix608()
-        ..webuiAnswers['createShortcut'] = true;
+    test('WebUI X pins through webui.createShortcut', () {
+      final bridge = FakeBridge.webuix()..webuiAnswers['createShortcut'] = true;
       final shortcut = ModuleShortcut(bridge);
       expect(shortcut.isSupported, isTrue);
       expect(shortcut.exists, isFalse);
@@ -19,26 +18,25 @@ void main() {
       expect(bridge.calls, ['webui.createShortcut()']);
     });
 
-    test('hasShortcut may arrive as a string', () {
-      final bridge = FakeBridge.webuix608();
-      bridge.webuiProperties['hasShortcut'] = 'true';
+    test('hasShortcut is a boolean property', () {
+      final bridge = FakeBridge.webuix();
+      bridge.webuiProperties['hasShortcut'] = true;
       expect(ModuleShortcut(bridge).exists, isTrue);
-      bridge.webuiProperties['hasShortcut'] = 'false';
+      bridge.webuiProperties['hasShortcut'] = false;
       expect(ModuleShortcut(bridge).exists, isFalse);
       bridge.webuiProperties['hasShortcut'] = null;
       expect(ModuleShortcut(bridge).exists, isNull);
     });
 
     test('a refused pin is false, not an error', () {
-      final bridge = FakeBridge.webuix608()
+      final bridge = FakeBridge.webuix()
         ..webuiAnswers['createShortcut'] = false;
       expect(ModuleShortcut(bridge).create(), isFalse);
     });
 
     test('no boolean answer is null: requested, outcome unknown', () {
-      // v608: a boxed Boolean reaches the page as no boolean at all.
       for (final answer in [null, const <String, Object?>{}, 'true']) {
-        final bridge = FakeBridge.webuix608()
+        final bridge = FakeBridge.webuix()
           ..webuiAnswers['createShortcut'] = answer;
         expect(ModuleShortcut(bridge).create(), isNull);
         expect(bridge.calls, ['webui.createShortcut()']);
@@ -46,11 +44,7 @@ void main() {
     });
 
     test('elsewhere it is unsupported and calls nothing', () {
-      for (final bridge in [
-        FakeBridge.kernelsu(),
-        FakeBridge.webuix(),
-        FakeBridge.browser(),
-      ]) {
+      for (final bridge in [FakeBridge.kernelsu(), FakeBridge.browser()]) {
         final shortcut = ModuleShortcut(bridge);
         expect(shortcut.isSupported, isFalse);
         expect(shortcut.exists, isNull);
@@ -95,7 +89,7 @@ void main() {
     });
 
     test('hosts without the methods are unsupported', () {
-      for (final bridge in [FakeBridge.webuix(), FakeBridge.browser()]) {
+      for (final bridge in [FakeBridge.browser()]) {
         final packages = HostPackages(bridge);
         expect(packages.isSupported, isFalse);
         expect(packages.list, throwsUnsupportedError);
@@ -103,8 +97,27 @@ void main() {
       }
     });
 
-    test('v608 has them', () {
-      expect(HostPackages(FakeBridge.webuix608()).isSupported, isTrue);
+    test('WebUI X uses pm and passes a native package array', () {
+      final bridge = FakeBridge.webuix()
+        ..pmAnswers['listPackages'] = '["a.b"]'
+        ..pmAnswers['getPackagesInfo'] = (List<String> names) => jsonEncode([
+          for (final name in names) {'packageName': name},
+        ]);
+      final packages = HostPackages(bridge);
+      expect(packages.isSupported, isTrue);
+      expect(packages.list(), ['a.b']);
+      expect(packages.info(['a.b']).single.packageName, 'a.b');
+      expect(bridge.calls, [
+        'ksu.pm().listPackages(all)',
+        'ksu.pm().getPackagesInfo([a.b])',
+      ]);
+    });
+
+    test('a refused pm call does not use deprecated package APIs', () {
+      final bridge = FakeBridge.webuix()
+        ..pmAnswers['listPackages'] = (String _) => throw StateError('denied');
+      expect(HostPackages(bridge).list, throwsStateError);
+      expect(bridge.calls, ['ksu.pm().listPackages(all)']);
     });
   });
 }

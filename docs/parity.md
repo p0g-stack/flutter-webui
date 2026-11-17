@@ -1,5 +1,15 @@
 # Parity: IME, clipboard, fonts, locale, accessibility, lifecycle
 
+Current target: Flutter 3.47.9 and WebUI X v660. The v438/v608 WebUI X targets
+are retired. [Current host delta](hosts.md#current-support-webui-x-v660)
+supersedes the old WebUI X claims below: page visibility (not `WX_ON_*`)
+drives lifecycle, CSS drives insets, MX events drive predictive Back, and
+disposal destroys the page. Package queries use `ksu.pm()` with PM permission.
+KsuIO and Response/WritableStream are upstream host IO interfaces, not a
+replacement for the root channel's process/socket protocol. Engine patches
+are unchanged. The following dated source survey is historical, not v660
+qualification evidence.
+
 Embedder comparison for flutter-webui (Flutter 3.47.5 `web_ui` inside a root
 manager's Android System WebView). Written 2026-10-01. Nothing here is
 device-verified. Every "devicelab" line is something to measure before a

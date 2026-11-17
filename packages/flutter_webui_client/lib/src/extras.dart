@@ -13,15 +13,10 @@ import 'bridge.dart';
 /// WebUI X draws the shortcut from the module's icon: `webuiIcon=<path>` (or
 /// `icon=`) in `module.prop`, a PNG found first under `webroot/`, then under
 /// the module directory. Without one the host shows an "invalid icon" toast
-/// and pins nothing (v608; lab).
+/// and pins nothing. Shortcuts open a new-process activity and a new page.
 ///
-/// On WebUI X v608 neither answer can be trusted, so [create] is a request
-/// and the launcher's dialog is the outcome (devicelab, 2026-10-05):
-/// - `createShortcut()` returns a boxed `java.lang.Boolean`, which WebView's
-///   bridge does not hand to the page as a boolean: the page never sees
-///   true, even when the pin dialog opens.
-/// - `hasShortcut` looks for `shortcut_<id>_<engine>` while `createShortcut`
-///   pins `shortcut_<id>`, so it stays false after a pin.
+/// WebUI X v660 still looks up `shortcut_<id>_<engine>` but pins
+/// `shortcut_<id>`, so [exists] can report false after a successful pin.
 final class ModuleShortcut {
   ModuleShortcut(this._bridge);
 
@@ -31,16 +26,12 @@ final class ModuleShortcut {
   bool get isSupported => _bridge.webuiHas('createShortcut');
 
   /// Whether the module's shortcut is already pinned, as the host saw it when
-  /// the page loaded; null where unknown. WebUI X v608 reports false even
+  /// the page loaded; null where unknown. WebUI X v660 can report false even
   /// after a pin (see the class comment), so read false as "unknown".
   bool? get exists {
     if (!isSupported) return null;
-    // A property, read when the page loads; WebUI X hands it through its
-    // string dispatcher, so it may arrive as "true" or "false".
     return switch (_bridge.webuiProperty('hasShortcut')) {
       final bool value => value,
-      'true' => true,
-      'false' => false,
       _ => null,
     };
   }
@@ -49,7 +40,7 @@ final class ModuleShortcut {
   /// user, and the host says in a toast when it cannot (no launcher support,
   /// already pinned, no icon). Returns the host's answer when it gives a
   /// boolean (true: requested, false: refused), else null: requested, with
-  /// the result shown to the user only (WebUI X v608).
+  /// the result shown to the user only.
   bool? create() {
     if (!isSupported) {
       throw UnsupportedError(
@@ -119,16 +110,17 @@ final class HostPackageInfo {
 
 String? _string(Object? v) => v is String ? v : null;
 
-/// The manager's own package list (`ksu.listPackages` and
-/// `ksu.getPackagesInfo`, on KernelSU and WebUI X), read without a root
-/// shell. A fast path only: each host answers from its own view, so the
-/// root channel stays the way to see every package.
+/// The manager's package list, read without a root shell.
+///
+/// Uses `ksu.pm()` where present, otherwise KernelSU's `ksu.listPackages`
+/// and `ksu.getPackagesInfo`. This is a fast path only: each host answers
+/// from its own view, so the root channel stays the way to see every package.
 ///
 /// - KernelSU answers from its Superuser screen's app list (loaded by the
 ///   manager, without special apps), so a package outside it, such as
 ///   `android`, comes back with [HostPackageInfo.error] and no icon.
-/// - WebUI X v608 answers from the package manager (Play builds: launchable
-///   apps only).
+/// - WebUI X v660 answers from Android's package manager and requires
+///   `kernelsu.permission.PM` in `webroot/config.json` permissions.
 ///
 /// A package the host did not find is data, not a failure: check
 /// [HostPackageInfo.found] and fall back to the root channel. Where the host
@@ -140,7 +132,8 @@ final class HostPackages {
   final HostBridge _bridge;
 
   bool get isSupported =>
-      _bridge.ksuHas('listPackages') && _bridge.ksuHas('getPackagesInfo');
+      _bridge.ksuHas('pm') ||
+      (_bridge.ksuHas('listPackages') && _bridge.ksuHas('getPackagesInfo'));
 
   void _check() {
     if (!isSupported) {
@@ -151,7 +144,11 @@ final class HostPackages {
   /// Package names of [filter]'s packages.
   List<String> list([PackageFilter filter = PackageFilter.all]) {
     _check();
-    final decoded = _decode(_bridge.callKsu('listPackages', [filter.name]));
+    final decoded = _decode(
+      _bridge.ksuHas('pm')
+          ? _bridge.callKsuPm('listPackages', [filter.name])
+          : _bridge.callKsu('listPackages', [filter.name]),
+    );
     return decoded is List ? [for (final p in decoded) '$p'] : const [];
   }
 
@@ -159,7 +156,9 @@ final class HostPackages {
   List<HostPackageInfo> info(List<String> packageNames) {
     _check();
     final decoded = _decode(
-      _bridge.callKsu('getPackagesInfo', [jsonEncode(packageNames)]),
+      _bridge.ksuHas('pm')
+          ? _bridge.callKsuPm('getPackagesInfo', [packageNames])
+          : _bridge.callKsu('getPackagesInfo', [jsonEncode(packageNames)]),
     );
     if (decoded is! List) return const [];
     return [
