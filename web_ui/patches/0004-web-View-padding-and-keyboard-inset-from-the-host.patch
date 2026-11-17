@@ -1,4 +1,4 @@
-From f5e700ac345100e7cf23737f32720a0633119175 Mon Sep 17 00:00:00 2001
+From b69f722122681830873a1fca95b32e514d05b3e5 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 1 Oct 2026 05:35:35 +0000
 Subject: [PATCH 4/5] [web] View padding and keyboard inset from the host
@@ -122,5 +122,5 @@ index 6a7c610bd62..7ba88f8e2a7 100644
      // Ensure that viewInsets are never negative. If it's not caught here, it will be caught later
      // in the framework, and will be hard to debug since the root cause is here.
 -- 
-2.43.0
+2.56.0
 
