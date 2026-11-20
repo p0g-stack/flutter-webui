@@ -1,5 +1,7 @@
 # flutter-webui
 
+> **Moved.** The packages now live in [p0g-stack/p0g](https://github.com/p0g-stack/p0g) under `pkgs/flutter_webui`, `pkgs/flutter_webui_client`, `pkgs/flutter_webui_root`, and `web_ui/` became [`web_sdk/`](https://github.com/p0g-stack/p0g/tree/main/web_sdk), with this history imported. New web SDK releases are published from p0g. This repository is archived; its commits and its existing `web-sdk-*` releases stay available.
+
 The Flutter embedder for KernelSU-style WebUI hosts, in Dart. A module's page
 runs inside the root manager's WebView (KernelSU, KernelSU Next, SukiSU, APatch,
 WebUI X / MMRL). This repo makes a stock Flutter web app behave there the way it
